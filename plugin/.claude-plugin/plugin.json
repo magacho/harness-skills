@@ -1,0 +1,8 @@
+{
+  "name": "harness",
+  "version": "0.1.0",
+  "description": "Auditoria e instalação de harness de desenvolvimento agêntico: contexto, verificação, permissões e fronteiras de módulo verificáveis.",
+  "author": { "name": "<seu nome>" },
+  "homepage": "https://github.com/<user>/harness",
+  "license": "MIT"
+}

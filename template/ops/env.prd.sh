@@ -1,0 +1,9 @@
+# Produção. DEPLOY_ALLOWED=false é a trava principal.
+export ENV_NAME="prd"
+export AWS_PROFILE="prd"
+export AWS_REGION="us-east-1"
+export ECS_CLUSTER="app-prd"
+export ECS_SERVICE="api-prd"
+export LOG_GROUP="/ecs/api-prd"
+export HEALTH_URL="https://api.example.com/health"
+export DEPLOY_ALLOWED="false"

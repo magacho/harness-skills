@@ -1,0 +1,11 @@
+{
+  "name": "harness",
+  "owner": { "name": "<seu nome>" },
+  "plugins": [
+    {
+      "name": "harness",
+      "source": "./plugin",
+      "description": "Audita e instala harness de desenvolvimento agêntico em repositórios novos e legados."
+    }
+  ]
+}
