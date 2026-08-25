@@ -29,8 +29,14 @@ oráculo e o tamanho da janela.**
 
 ## Começando
 
-    /plugin marketplace add <user>/harness
-    /plugin install harness
+    /plugin marketplace add <caminho-ou-repo>
+    /plugin install harness@harness-mp
+
+Enquanto não há repositório remoto definido, o marketplace aponta para o
+diretório local:
+
+    /plugin marketplace add ~/Workspace/harness-skills
+    /plugin install harness@harness-mp
 
 **Projeto existente** — rode `harness:audit` primeiro. É read-only e produz três
 listas: remover, corrigir, adicionar. A de *remover* costuma ser a mais valiosa.
