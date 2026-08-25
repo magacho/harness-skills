@@ -11,10 +11,10 @@ fi
 
 if [[ -f .dependency-cruiser.js ]]; then
   echo "CONFIG_EXISTENTE: .dependency-cruiser.js"
-  npx --yes depcruise --config .dependency-cruiser.js src modules 2>&1 | tail -5
+  npx --yes --package dependency-cruiser depcruise --config .dependency-cruiser.js src modules 2>&1 | tail -5
 else
   echo "SEM_CONFIG: contando ciclos com regra mínima para dimensionar o baseline"
-  npx --yes depcruise --no-config --validate 2>/dev/null <<< '' || true
+  npx --yes --package dependency-cruiser depcruise --no-config --validate 2>/dev/null <<< '' || true
   npx --yes madge --circular --extensions ts,tsx,js,jsx src modules 2>&1 | tail -20 \
     || echo "(instale madge ou dependency-cruiser para dimensionar)"
 fi

@@ -20,24 +20,30 @@ oráculo e o tamanho da janela.**
     docs/HARNESS.md     regras — 45 regras, cada uma rastreando a um resultado
     docs/PLAN.md        como — construção da skill, implantação, deploy
     docs/adapters/      contrato de adaptador por linguagem
-    plugin/             plugin Claude Code (skill harness:audit)
-    template/           scaffold pronto para projeto novo
+    plugin/skills/audit/    diagnostica: read-only, produz o relatório
+    plugin/skills/install/  instala: dois modos, um mecanismo
+      assets/template/      scaffold de projeto novo
+      scripts/adapters/     o contrato de adaptador, implementado
     evals/              fixtures e testes dos scripts
     scripts/validate.sh validação do próprio produto antes do release
 
 ## Começando
 
-**Projeto novo** — copie `template/`, renomeie os módulos para o seu domínio,
-ajuste os paths da config de fronteira, e plante uma violação para confirmar que o
-gate reprova. Detalhes em `template/README.md`.
-
-**Projeto existente** — instale o plugin e rode a auditoria. Ela é read-only:
-
     /plugin marketplace add <user>/harness
     /plugin install harness
 
-A auditoria produz três listas — remover, corrigir, adicionar — e um sumário de
-conformidade. A lista de *remover* costuma ser a mais valiosa.
+**Projeto existente** — rode `harness:audit` primeiro. É read-only e produz três
+listas: remover, corrigir, adicionar. A de *remover* costuma ser a mais valiosa.
+Depois `harness:install`, que executa as fases 1 a 3 com um checkpoint humano
+entre cada uma. Nenhuma delas toca código-fonte.
+
+**Projeto novo** — `harness:install` detecta que não há código e cai no modo
+scaffold: copia o template, pergunta os nomes dos módulos do seu domínio, ajusta
+os paths da config de fronteira junto, e planta uma violação para confirmar que o
+gate reprova.
+
+Nos dois modos a instalação mostra o que vai escrever e espera confirmação, é
+idempotente, e nunca sobrescreve o que você editou à mão.
 
 ## A pirâmide de verificação
 
@@ -63,15 +69,22 @@ qualquer refactor.
 
 ## Status
 
-`0.1.0` — primeiro corte deliberadamente pequeno.
+`0.2.0` — diagnostica e instala.
 
 | | disponível |
 |---|---|
 | `harness:audit` | sim, read-only |
-| `harness:retrofit` | não |
-| `harness:init` | não (o `template/` já serve) |
+| `harness:install` — modo A, projeto existente | sim: fases 1 a 3 do `PLAN.md` §4 |
+| `harness:install` — modo B, projeto novo | sim: scaffold com módulos renomeados |
+| Catraca de violações | sim, genérica: a comparação é do harness, não da ferramenta |
 | Fronteiras em JS/TS | sim, via dependency-cruiser |
 | Fronteiras em Python, JVM, Go | não — contrato de adaptador escrito, ausência declarada em voz alta |
+| Roster de subagentes (fase 4) | não |
+| Piloto de modularização (fases 5–6) | não, e não é escopo do harness |
+
+`harness:install` para na fase 3. O roster da onda 1 — revisor de mudança e
+arquiteto — ainda é trabalho manual, e a skill diz isso ao terminar em vez de
+deixar como omissão.
 
 O contrato de adaptador só foi exercitado por uma implementação. Provavelmente
 está errado em algum detalhe, e a segunda é que vai revelar onde.

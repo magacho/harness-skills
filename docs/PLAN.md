@@ -6,24 +6,33 @@ empacotar e publicar isso como produto distribuível.
 Documento **executável e descartável**: quando as fases terminarem, vira
 histórico. As regras duráveis estão no `HARNESS.md`; o porquê, no `INTENT.md`.
 
-Versão 2.0 · Derivado de `INTENT.md` v1.1 e `HARNESS.md` v2.0
+Versão 2.1 · Derivado de `INTENT.md` v1.1 e `HARNESS.md` v2.0
 
 ---
 
-## 1. Escopo do primeiro corte
+## 1. Escopo — primeiro e segundo cortes
 
-Deliberadamente pequeno. Uma skill, uma linguagem, sem escrita no repositório.
+O primeiro corte foi deliberadamente pequeno: uma skill, uma linguagem, sem
+escrita. O segundo adiciona a escrita.
 
 | | dentro | fora |
 |---|---|---|
-| Skills | `harness:audit` | `harness:init`, `harness:retrofit` |
+| Skills | `harness:audit`, `harness:install` | — |
 | Linguagem | Node / TypeScript | Python, JVM, Go |
-| Escrita | nenhuma (read-only) | hooks, configs, `CLAUDE.md` |
-| Papéis | nenhum instalado | roster da onda 1 |
+| Escrita | `CLAUDE.md`, `.claude/**`, `.harness/**`, config de fronteira | código-fonte, sempre |
+| Fases do §4 | 1, 2 e 3 (modo A); trilho A inteiro (modo B) | 4 (roster), 5–6 (modularização) |
 
-**Por que só o `audit`:** é read-only, entrega valor sozinho, roda em qualquer
-repositório sem negociação — e o relatório dele é a especificação do que o
-`retrofit` precisa fazer. Construir o retrofit antes do audit é desenhar sem dado.
+**Por que o `audit` veio primeiro:** é read-only, entrega valor sozinho, roda em
+qualquer repositório sem negociação — e o relatório dele é a especificação do que
+a instalação precisa fazer. Construir a instalação antes do audit seria desenhar
+sem dado.
+
+**Emenda ao plano: `harness:install` no lugar de `harness:init` + `harness:retrofit`.**
+Este documento previa duas skills. São uma só, com dois modos. O que muda entre
+greenfield e legado é o risco e a ordem das fases, não o mecanismo: detecção,
+geração de config, catraca e teste de fumaça são idênticos. Duas skills
+duplicariam os quatro, e a duplicação divergiria na primeira correção aplicada a
+só um dos lados. Registrado em `CHANGELOG.md` 0.2.0.
 
 **Por que só Node:** `D4 → R10` exige declarar a ausência em voz alta, não cobri-la
 mal. Uma linguagem bem feita, as outras anunciadas como não suportadas.
@@ -233,15 +242,20 @@ dizer isso em vez de instalar.
 
 ## 9. Sequência recomendada
 
-1. **`harness:audit`, Node apenas.** Menor risco, valor isolado, e o relatório
-   especifica o resto.
-2. **Rodar em um piloto pequeno e bagunçado.** Repositório limpo tem baseline
-   vazio, catraca sem função, e não ensina nada sobre a fase que decide.
-3. **Evals nos cinco formatos** + o negativo.
-4. **`harness:retrofit`, fases 1–2.** A catraca é a entrega.
-5. **`harness:init`** — o scaffold já existe; é empacotamento.
-6. **Fase 3, depois roster onda 1.**
-7. **Piloto de modularização** em repositório real, já com o harness instalado.
+1. ~~**`harness:audit`, Node apenas.**~~ Feito em `0.1.0`.
+2. ~~**`harness:install`, modo A fases 1–3 e modo B.**~~ Feito em `0.2.0`. A
+   catraca é a entrega, e os dois trilhos couberam numa skill só (§1).
+3. ~~**Evals: instalação em vazio, em legado com violações, idempotência, stack
+   sem adaptador, e o negativo.**~~ Feito em `0.2.0`.
+4. **Rodar em um piloto pequeno e bagunçado.** Repositório limpo tem baseline
+   vazio, catraca sem função, e não ensina nada sobre a fase que decide. É o
+   próximo passo, e o único que ainda não tem dado.
+5. **Repositório de terceiro.** Harness testado só na casa do autor sempre parece
+   funcionar.
+6. **Roster onda 1** — revisor de mudança e arquiteto (fase 4 do §4).
+7. **Segundo adaptador de linguagem.** É o que vai revelar onde o contrato de
+   quatro verbos está errado.
+8. **Piloto de modularização** em repositório real, já com o harness instalado.
 
 ---
 

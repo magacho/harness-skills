@@ -24,12 +24,12 @@ done
 echo "→ scripts executáveis"
 # env.*.sh são sourced, não executados: não exigem bit de execução
 while IFS= read -r f; do [[ -x "$f" ]] || err "$f sem bit de execução"; done \
-  < <(find plugin template scripts evals -name '*.sh' -not -name 'env.*.sh' 2>/dev/null)
+  < <(find plugin scripts evals -name '*.sh' -not -name 'env.*.sh' 2>/dev/null)
 
 echo "→ caminhos citados nas skills existem"
 for s in plugin/skills/*/SKILL.md; do
   d=$(dirname "$s")
-  grep -oE '\./(scripts|reference)/[a-zA-Z0-9._-]+' "$s" | sort -u | while read -r p; do
+  grep -oE '\./(scripts|reference|assets)/[a-zA-Z0-9._/-]+' "$s" | sort -u | while read -r p; do
     [[ -e "$d/${p#./}" ]] || err "$s cita $p que não existe"
   done
 done
@@ -38,6 +38,27 @@ echo "→ sem segredo versionado"
 grep -rInE '(AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY)' \
   --exclude-dir=.git --exclude-dir=node_modules . >/dev/null 2>&1 \
   && err "possível segredo versionado"
+
+echo "→ o template é distribuído por uma skill, não solto na raiz"
+[[ -d plugin/skills/install/assets/template ]] || err "template ausente de plugin/skills/install/assets/"
+[[ ! -d template ]] || err "template solto na raiz: nenhuma skill o distribui de lá"
+
+echo "→ contrato de adaptador implementado, não só escrito"
+for v in detect generate-config run normalize; do
+  grep -qE "^${v}\)" plugin/skills/install/scripts/adapters/node.sh \
+    || err "adaptador node.sh não implementa o verbo $v"
+done
+
+echo "→ a catraca é do harness, não da ferramenta (V8)"
+grep -q 'baseline.json' plugin/skills/install/assets/gate/boundaries.sh \
+  || err "o gate não compara com o baseline do harness"
+grep -qE '^\s*knownViolations' plugin/skills/install/scripts/adapters/node.sh \
+  && err "a catraca está delegada ao mecanismo nativo da ferramenta"
+
+echo "→ o dono é obrigatório (D6)"
+for f in plugin/skills/install/scripts/gen-config.sh plugin/skills/install/scripts/scaffold.sh; do
+  grep -q 'D6' "$f" || err "$f não exige dono nomeado"
+done
 
 echo "→ documentos normativos presentes"
 for d in docs/INTENT.md docs/HARNESS.md docs/PLAN.md docs/adapters/README.md; do

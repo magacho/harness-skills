@@ -25,7 +25,7 @@ Baseline nativo, quando existe, é otimização. Nunca requisito.
 
 | linguagem | ferramenta | status |
 |---|---|---|
-| JavaScript / TypeScript | dependency-cruiser | **implementado** |
+| JavaScript / TypeScript | dependency-cruiser | **implementado** — `plugin/skills/install/scripts/adapters/node.sh` |
 | Python | import-linter | não implementado |
 | JVM | ArchUnit | não implementado |
 | Go | go-arch-lint | não implementado |
@@ -33,6 +33,22 @@ Baseline nativo, quando existe, é otimização. Nunca requisito.
 **Regra D4:** stack sem adaptador recebe o harness completo **sem** o gate de
 fronteira, e a auditoria declara a lacuna em voz alta. Silenciar é o erro grave;
 instalar 80% não é.
+
+## Onde o adaptador vive em quem adota
+
+Na instalação, o adaptador é **copiado para dentro do repositório alvo**, em
+`.harness/adapters/`, junto com o gate que o invoca. Não fica no plugin: quem
+clona o repositório recebe o mesmo comportamento sem ter a skill instalada
+(`D1 → R8`), e o gate roda em CI e sob outro agente (`R12`).
+
+## Um verbo `run` que devolve verde sem ter verificado nada
+
+O `node.sh` recusa reportar sucesso quando cruza zero módulo. Um projeto
+TypeScript sem o compilador instalado faz o `dependency-cruiser` avisar em
+stderr e sair com "no dependency violations found" — verde, sem ter analisado
+arquivo nenhum. Todo adaptador novo precisa da mesma guarda: gate
+silenciosamente verde é pior que gate nenhum, porque cria a sensação de
+cobertura (`INTENT.md` §11, fracasso nº 5).
 
 ## Adicionando um adaptador
 

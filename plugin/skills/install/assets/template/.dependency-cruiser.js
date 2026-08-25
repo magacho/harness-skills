@@ -75,8 +75,9 @@ module.exports = {
     doNotFollow: { path: "node_modules" },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: "tsconfig.json" },
-    // Legado: gere com `depcruise --output-type baseline > .dependency-cruiser-known-violations.json`
-    // e o gate passa a falhar só no que é NOVO.
-    // knownViolations: ".dependency-cruiser-known-violations.json",
+    // A catraca é do harness, não da ferramenta (V8): a comparação com o
+    // baseline vive em .harness/gate-boundaries.sh, no formato
+    // [{origem, destino, regra}], para valer em qualquer linguagem. Por isso
+    // knownViolations fica desligado aqui de propósito.
   },
 };

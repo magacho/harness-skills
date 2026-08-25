@@ -7,7 +7,7 @@ description: Audita o harness de um repositório — contexto, verificação, pe
 
 Diagnostica o estado do harness de um repositório e produz um relatório
 acionável. **Não altera nada.** É a porta de entrada: o relatório desta skill é a
-especificação do que o retrofit precisa fazer.
+especificação do que o `harness:install` precisa fazer.
 
 Base normativa: `docs/HARNESS.md` (regras) e `docs/INTENT.md` (resultados).
 
@@ -70,7 +70,7 @@ E o sumário de conformidade de `reference/conformance-checklist.md`.
 ## Limites
 
 - **Read-only.** Se o usuário pedir para corrigir, diga o que fazer e ofereça o
-  retrofit — não edite.
+  `harness:install` — não edite.
 - **Descreva, não prescreva** (P7/C6). Os módulos do projeto têm os nomes que já
   têm. Nunca compare a um template nem sugira renomear para `domain`/`data`.
 - **Só Node/TS tem adaptador de fronteira.** As demais stacks recebem auditoria

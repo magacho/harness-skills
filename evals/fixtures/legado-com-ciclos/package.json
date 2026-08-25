@@ -1,0 +1,8 @@
+{
+  "name": "fixture-legado-com-ciclos",
+  "private": true,
+  "scripts": {
+    "lint": "echo 'lint verde'",
+    "typecheck": "echo 'erro em src/cobranca/cobrar.js: tipo incompatível' && exit 1"
+  }
+}
