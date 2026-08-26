@@ -9,7 +9,7 @@
 # próprio conteúdo. Arquivo editado à mão é PULADO, nunca sobrescrito.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.3"
+VERSION="0.2.5"
 
 repo=""; plan=""; owner=""; ceiling="supervisionado"; fase=""
 while [[ $# -gt 0 ]]; do
@@ -88,6 +88,7 @@ breason=$(jq -r '.boundary.reason // empty' "$plan")
 formatter=$(jq -r '.formatter // empty' "$plan")
 mapfile -t targets < <(jq -r '.boundary.targets[]?' "$plan")
 mapfile -t modulos < <(jq -r '.modulos[]?' "$plan")
+size_cfg=$(jq -c '.size // empty | del(.acima_do_teto, .maior)' "$plan")
 lint_cmd=$(jq -r 'if .gates_hoje.lint.estado=="verde" then .gates_hoje.lint.comando else empty end' "$plan")
 tc_cmd=$(jq -r 'if .gates_hoje.typecheck.estado=="verde" then .gates_hoje.typecheck.comando else empty end' "$plan")
 
@@ -126,6 +127,7 @@ if [[ "$fase" == 1 ]]; then
   [[ -n "$tc_cmd" ]] && verificados+=("$tc_cmd")
   [[ -n "$lint_cmd" ]] && verificados+=("$lint_cmd")
   [[ -n "$adapter" ]] && verificados+=(".harness/gate-boundaries.sh")
+  [[ -n "$size_cfg" ]] && verificados+=(".harness/gate-size.sh")
   {
     echo "---"
     echo "description: Prepara o PR — verifica, resume, entrega"
@@ -151,6 +153,10 @@ SHIP
   # gate + adaptador entram no REPOSITÓRIO, não ficam no plugin: quem clona
   # recebe o mesmo comportamento sem ter a skill instalada (D1 → R8, D5 → R12).
   copy_marked "$here/../assets/gate/boundaries.sh" ".harness/gate-boundaries.sh" "#"
+  # A catraca de tamanho não tem adaptador: não depende de ferramenta e vale em
+  # qualquer linguagem (V10 → R12). Vai sempre, inclusive nas stacks onde o gate
+  # de fronteira não existe.
+  copy_marked "$here/../assets/gate/size.sh" ".harness/gate-size.sh" "#"
   if [[ -n "$adapter" ]]; then
     copy_marked "$here/adapters/$adapter.sh" ".harness/adapters/$adapter.sh" "#"
     if [[ ! -e "$root/$bcfg" ]]; then
@@ -167,6 +173,7 @@ SHIP
   mkdir -p "$root/.harness"
   jq -n --arg v "$VERSION" --arg o "$owner" --arg c "$ceiling" \
         --arg a "$adapter" --arg bc "$bcfg" --arg br "$breason" \
+        --argjson sz "${size_cfg:-null}" \
         --arg lint "$lint_cmd" --arg tc "$tc_cmd" --arg fmt "$formatter" \
         --argjson t "$(printf '%s\n' "${targets[@]+"${targets[@]}"}" | jq -R . | jq -s 'map(select(length>0))')" '
     { harness_version: $v,
@@ -176,7 +183,9 @@ SHIP
       formatter: (if $fmt == "" then null else $fmt end),
       boundary: (if $a == "" then {adapter: null, reason: $br}
                  else {adapter: $a, config: $bc, targets: $t} end),
+      size: $sz,
       gates: { boundaries: ($a != ""),
+               size: ($sz != null),
                lint: (if $lint == "" then null else $lint end),
                typecheck: (if $tc == "" then null else $tc end) } }' \
     > "$root/.harness/harness.json"
@@ -192,7 +201,8 @@ SHIP
     "Bash(psql *prd*)","Bash(kubectl * --context *prod*)"]'
   extra_deny='[]'
   [[ "$ceiling" == assistido ]] && extra_deny='["Bash(git commit*)","Bash(git push*)"]'
-  allow='["Bash(git diff:*)","Bash(git log:*)","Bash(git status:*)","Bash(./.harness/gate-boundaries.sh:*)"]'
+  allow='["Bash(git diff:*)","Bash(git log:*)","Bash(git status:*)",
+    "Bash(./.harness/gate-boundaries.sh:*)","Bash(./.harness/gate-size.sh:*)"]'
   [[ -f "$root/ops/investigate.sh" ]] && allow=$(jq -c '. + ["Bash(./ops/investigate.sh:*)"]' <<<"$allow")
 
   hookdef() { jq -n --arg e "$1" --arg m "$2" --arg c "$3" --argjson async "$4" --argjson to "$5" '
@@ -208,19 +218,66 @@ SHIP
       { _harness: {generated: $v},
         permissions: { allow: $allow, deny: ($deny + $extra) },
         hooks: ($pre + $post + $stop + $end) }')
-  if [[ -f "$root/.claude/settings.json" ]]; then
-    # Merge, nunca sobrescrita: o que o time configurou continua valendo.
-    jq -s '.[0] * .[1]
-           | .permissions.allow = ((.[0].permissions.allow // []) + .permissions.allow | unique)
-           | .permissions.deny  = ((.[0].permissions.deny  // []) + .permissions.deny  | unique)' \
-      "$root/.claude/settings.json" <(printf '%s' "$novo_settings") > "$root/.claude/settings.json.tmp" 2>/dev/null \
-      || jq -s '.[0] * .[1]' "$root/.claude/settings.json" <(printf '%s' "$novo_settings") > "$root/.claude/settings.json.tmp"
-    mv "$root/.claude/settings.json.tmp" "$root/.claude/settings.json"
-    escritos+=(".claude/settings.json (merge)")
+  # Merge com regra por caminho, em arquivo próprio e testado
+  # (./merge-settings.jq). SEM FALLBACK: se o merge não pode ser feito com
+  # segurança, o arquivo não é tocado e a lacuna é relatada como pulo (D3 → R10).
+  #
+  # O que havia aqui era `expr || fallback`, e o `expr` tinha erro de tipo:
+  # depois de `.[0] * .[1]` o contexto já é o objeto mesclado, e `.[0]` nele não
+  # existe. Toda instalação caía no fallback `.[0] * .[1]`, que em array deixa o
+  # lado direito SUBSTITUIR — um reinstall apagava as negações que o projeto
+  # tinha escrito à mão, e ainda contava o arquivo como escrito e saía 0.
+  set_json="$root/.claude/settings.json"
+  mkdir -p "$root/.claude"
+  guardar_proposta() { printf '%s\n' "$novo_settings" > "$root/.harness/settings.proposto.json"; }
+
+  if [[ -f "$set_json" ]]; then
+    if jq -n -f "$here/merge-settings.jq" \
+         --slurpfile v "$set_json" \
+         --slurpfile n <(printf '%s' "$novo_settings") > "$set_json.tmp" 2>/dev/null \
+       && [[ -s "$set_json.tmp" ]]; then
+
+      # Duas invariantes, verificadas contra o resultado e não contra a intenção.
+      # A checagem é independente do merge de propósito: guarda que reusa a
+      # lógica do que verifica esconde o próprio defeito.
+      #
+      # A7 → R5: nada que o projeto negou pode sair. Autonomia se restringe,
+      # nunca se afrouxa.
+      perdeu_deny=$(jq -n --slurpfile a "$set_json" --slurpfile b "$set_json.tmp" \
+        '(($a[0].permissions.deny // []) - ($b[0].permissions.deny // [])) | length' 2>/dev/null || echo 1)
+      # Hook do projeto sobrevive. O harness só escreve dentro de .claude/hooks/,
+      # então todo comando FORA desse diretório é do projeto, por construção —
+      # sem enumerar os nossos, que mudam de versão para versão.
+      perdeu_hook=$(jq -n --slurpfile a "$set_json" --slurpfile b "$set_json.tmp" '
+        def alheios: [ .. | objects | select(has("command")) | .command
+                       | strings | select(test("/\\.claude/hooks/") | not) ];
+        (($a[0] | alheios) - ($b[0] | alheios)) | length' 2>/dev/null || echo 1)
+
+      if [[ "$perdeu_deny" == 0 && "$perdeu_hook" == 0 ]]; then
+        mv "$set_json.tmp" "$set_json"
+        escritos+=(".claude/settings.json (merge)")
+      else
+        rm -f "$set_json.tmp"; guardar_proposta
+        pulados+=(".claude/settings.json — RECUSADO: o merge perderia $perdeu_deny negação(ões) e $perdeu_hook hook(s) do projeto. PERMISSÕES NÃO INSTALADAS (A2/A8 → R5): sem elas não há dupla trava de produção. Proposta em .harness/settings.proposto.json — compare à mão")
+      fi
+    else
+      rm -f "$set_json.tmp"; guardar_proposta
+      pulados+=(".claude/settings.json — não é JSON válido, ou o merge falhou. PERMISSÕES NÃO INSTALADAS (A2/A8 → R5). Proposta em .harness/settings.proposto.json — compare à mão")
+    fi
   else
-    mkdir -p "$root/.claude"
-    printf '%s\n' "$novo_settings" > "$root/.claude/settings.json"
-    escritos+=(".claude/settings.json")
+    # Passa pela MESMA função, contra `{}`. Escrever direto o $novo_settings aqui
+    # produzia ordem de chave diferente da que o merge produz, e a segunda
+    # instalação reescrevia o arquivo só por isso — idempotência quebrada por
+    # formatação (D3 → R10).
+    if jq -n -f "$here/merge-settings.jq" \
+         --slurpfile v /dev/null \
+         --slurpfile n <(printf '%s' "$novo_settings") > "$set_json" 2>/dev/null \
+       && [[ -s "$set_json" ]]; then
+      escritos+=(".claude/settings.json")
+    else
+      rm -f "$set_json"; guardar_proposta
+      pulados+=(".claude/settings.json — o merge falhou na primeira escrita. PERMISSÕES NÃO INSTALADAS (A2/A8 → R5). Proposta em .harness/settings.proposto.json")
+    fi
   fi
 fi
 
@@ -259,6 +316,11 @@ if [[ "$fase" == 3 ]]; then
       echo "- \`./.harness/gate-boundaries.sh\` — fronteiras, falha só no que é novo"
       echo "- \`./.harness/gate-boundaries.sh --tighten\` — remove do baseline o já resolvido"
     fi
+    if [[ -n "$size_cfg" ]]; then
+      teto=$(jq -r '.ceiling' <<<"$size_cfg")
+      echo "- \`./.harness/gate-size.sh\` — tamanho: arquivo acima de $teto linhas não cresce"
+      echo "- \`./.harness/gate-size.sh --tighten\` — baixa o baseline dos que encolheram"
+    fi
     [[ -f "$root/ops/investigate.sh" ]] && echo "- \`./ops/investigate.sh\` — investigação read-only"
     echo
     if [[ ${#modulos[@]} -gt 0 ]]; then
@@ -276,6 +338,12 @@ if [[ "$fase" == 3 ]]; then
     if [[ -n "$adapter" ]]; then
       echo "- Adicionar violação ao baseline para o gate passar. O baseline só encolhe"
       echo "- Import novo entre módulos sem ADR em \`docs/adr/\`"
+    fi
+    if [[ -n "$size_cfg" ]]; then
+      echo "- Fazer crescer arquivo que já está acima do teto de tamanho. Se a"
+      echo "  mudança cabe lá, ela cabe num arquivo novo com responsabilidade própria"
+      echo "- Partir arquivo em \`-parte2\` para passar no gate: satisfaz o número e"
+      echo "  piora o código. Parta por responsabilidade ou não parta"
     fi
     echo
     echo "## Antes de começar"

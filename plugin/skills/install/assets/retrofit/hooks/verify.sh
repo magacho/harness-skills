@@ -36,7 +36,14 @@ if [[ -x "$root/.harness/gate-boundaries.sh" ]]; then
   [[ $rc -eq 1 ]] && fail "$bnd"
 fi
 
-# 2. Lint e 3. typecheck: só os que já passavam no dia da instalação. Ligar um
+# 2. Tamanho, com catraca. Não depende de adaptador: é o único gate estrutural
+# que existe em toda stack. Sai 3 quando não está configurado (D4).
+if [[ -x "$root/.harness/gate-size.sh" ]]; then
+  sz=$("$root/.harness/gate-size.sh" --scope "$scope" 2>&1); rc=$?
+  [[ $rc -eq 1 ]] && fail "$sz"
+fi
+
+# 3. Lint e 4. typecheck: só os que já passavam no dia da instalação. Ligar um
 # gate que reprova trabalho legítimo é o modo de fracasso nº 1 do INTENT.
 # Projeto inteiro roda inteiro; o filtro é na saída (V4).
 for g in lint typecheck; do

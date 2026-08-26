@@ -6,6 +6,38 @@ Skill que audita repositório alheio sem eval é risco não medido.
 sempre roda sobre uma cópia em diretório temporário: fixture que a suíte suja
 deixa de ser fixture.
 
+## Estrutura
+
+`run.sh` é só o corredor — caminhos, contadores, o par `t()`/`s()`, a sonda de
+rede e o construtor de fixture. Os testes moram em `cases/`, **uma família por
+arquivo**, carregados com `source` (não subshell, para que os contadores sejam
+os mesmos).
+
+    ./run.sh                     roda tudo
+    ./run.sh 70-catraca-tamanho  roda um caso — prefixo basta
+
+| caso | prova |
+|---|---|
+| `10-audit-contexto` | o audit lê stack, harness existente e afirmações do `CLAUDE.md` (C4) |
+| `15-audit-dimensao` | quantos god files e quantas violações uma catraca congelaria |
+| `20-version` | `/harness:version`: as duas versões e a divergência entre elas |
+| `30-adapter` | contrato de quatro verbos, e o grafo TypeScript |
+| `40-plan` | `plan-install.sh`: modo, módulos do projeto, gates de hoje, veredito |
+| `50-retrofit` | modo A: fases 1 e 3, idempotência, dono obrigatório |
+| `55-merge-settings` | o merge de `settings.json`: união, substituição, e a recusa |
+| `60-catraca-fronteira` | presença: diferença de conjunto, baseline só encolhe |
+| `70-catraca-tamanho` | grandeza: o número não sobe, `--tighten`, `--rename` |
+| `80-sem-adaptador` | D4: a lacuna é dita, e a catraca de tamanho continua valendo |
+| `90-scaffold` | modo B: nomes do domínio real, baselines vazios, teto absoluto |
+| `95-fumaca` | V9 de ponta a ponta, com a ferramenta de verdade |
+
+**Cada caso monta o próprio repositório**, por `legado_instalado <nome>`. Antes
+havia um `$W/legado` atravessando meia suíte: a ordem dos blocos era carregada e
+invisível, e mexer num quebrava outro três telas abaixo. A função **recusa** um
+nome que já existe — `cp -a src dst` com `dst` existente copia para dentro, e o
+caso seguiria medindo uma árvore aninhada com cara de sucesso. Foi exatamente o
+defeito que a divisão produziu na primeira tentativa.
+
 ## Cobertura atual
 
 | fixture | testa |
@@ -32,10 +64,36 @@ deixa de ser fixture.
 - **Repo vazio** — scaffold renomeia módulos, imports e os paths da config junto,
   inclusive dentro de alternações de regex; e recusa rodar onde já há código.
 - **Negativo** — o veredito vem com a razão, não só com o "não".
+- **Catraca de tamanho** — o god file existente é congelado e para de crescer; o
+  arquivo novo acima do teto reprova; `--tighten` só desce; `--rename` move a
+  entrada sem afrouxar; a recusa ensina a saída certa em vez de só negar (A4).
+  Um dos evals reprova um `.py` acima do teto: a catraca vale onde não há
+  adaptador de fronteira nenhum (V10 → R12).
 
 Os evals que dependem do `dependency-cruiser` são **pulados com motivo impresso**
 quando a ferramenta não está acessível. Silenciar a lacuna seria o mesmo erro que
 a regra D4 proíbe.
+
+## O merge que apagava as travas do projeto
+
+O defeito mais caro que o harness teve, corrigido em 0.2.5. `gen-config.sh` fazia
+`.[0] * .[1] | .permissions.deny = ((.[0].permissions.deny // []) + ...)` — mas
+depois do `*` o contexto já é o objeto mesclado, e `.[0]` nele é erro de tipo.
+**Toda** instalação caía no `|| jq -s '.[0] * .[1]'`, e o `*` do jq deixa a
+direita SUBSTITUIR o array. Reinstalar sobre um projeto customizado levava 23
+negações a 12, reportava `.claude/settings.json (merge)` e saía 0.
+
+Três coisas foram travadas por eval, não só a linha:
+
+- **a união** — negação e hook do projeto sobrevivem, e um teste prova que o
+  merge ingênuo perderia (para que a intenção fique registrada no próprio eval);
+- **a substituição** — a entrada de hook do harness é trocada, não somada, senão
+  mudar um timeout deixaria as duas e o hook rodaria duas vezes;
+- **a recusa** — `settings.json` inválido não é sobrescrito, não conta como
+  escrito, e o pulo diz `PERMISSÕES NÃO INSTALADAS`.
+
+E `validate.sh` reprova a *família*, não a instância: `.[0]` indexado depois de
+um `*`, `|| jq` como fallback, e a ausência de qualquer uma das duas invariantes.
 
 ## Regressões travadas
 

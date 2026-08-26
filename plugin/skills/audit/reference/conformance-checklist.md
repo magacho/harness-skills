@@ -10,6 +10,8 @@ Extraído de HARNESS.md §12. Verificável, não declarável.
 - [ ] Guarda anti-loop presente; contador zera ao passar `V5 → R2`
 - [ ] **Violação plantada de propósito reprova** `V9 → R3`
 - [ ] Baseline de catraca existe se havia violações; e encolhe `V7 → R7`
+- [ ] Catraca de tamanho ativa: arquivo acima do teto não cresce `V10 → R4,R7`
+- [ ] Limite de função no linter, limite de arquivo na catraca `V11 → R4`
 - [ ] Todo gate roda como comando à mão `D5 → R12`
 - [ ] Escrita em produção negada em permissão **e** em hook `A2 → R5`
 - [ ] Script de investigação existe e é read-only `A3 → R5`

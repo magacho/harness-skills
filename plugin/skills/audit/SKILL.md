@@ -25,11 +25,20 @@ com leitura manual: menos confiável e não reproduzível entre execuções.
 ./scripts/detect-stack.sh <repo>       # stack, layout, harness existente → JSON
 ./scripts/check-claims.sh <repo>       # regra C4: as afirmações são verdadeiras?
 ./scripts/boundary-status.sh <repo>    # grafo e dimensão do baseline
+./scripts/size-status.sh <repo>        # god files: mediana, p95, quantos acima do teto
 ```
 
 Se `boundary_adapter` vier como `unsupported:*`, **declare em voz alta** no
 relatório que o gate de fronteira não está disponível para esta stack, e siga com
 o resto (regra D4). Nunca silencie a lacuna; nunca aborte a auditoria.
+
+`size-status.sh` não depende de adaptador nem de ferramenta: mede em qualquer
+stack. Relate `acima_do_teto` junto com `mediana` e `p95` — o número absoluto
+sozinho não diz nada. Mediana 90 com dez arquivos acima de 400 é um repositório
+saudável com dez pontos quentes; mediana 600 é outra conversa, e nesse caso o
+teto precisa ser discutido antes de instalar, não depois. Ele também sai com
+**código 3** quando não achou código-fonte: isso é dimensão desconhecida, nunca
+"nenhum god file".
 
 `boundary-status.sh` sai com **código 3** quando não conseguiu medir o grafo —
 sem diretório de código reconhecido, ou adaptador que cruzou zero módulo. Isso
@@ -41,11 +50,23 @@ conclua nada sobre a catraca a partir dela.
 Leia o `CLAUDE.md` raiz e os de módulo. Avalie contra as regras C:
 
 - **C1/C4** — afirmações verdadeiras (o script já respondeu; interprete)
-- **C5** — tamanho: raiz ~60 linhas, módulo ~15. Acima disso virou documentação
+- **C5** — tamanho do próprio `CLAUDE.md`: raiz ~60 linhas, módulo ~15. Acima
+  disso virou documentação. Não confunda com V10, que é tamanho de código
 - **P1** — cada seção muda comportamento do agente? O que não muda, sai
 - **C3** — cada módulo declara o que importa e o que nunca importa?
 
-### 3. Postura de risco
+### 3. Tamanho e responsabilidade
+
+O que `size-status.sh` mede é arquivo. O que interessa é responsabilidade, e isso
+nenhum script mede: **módulo cuja responsabilidade não cabe numa frase sem "e"**
+é achado de leitura, não de contagem. Contagem de arquivos por módulo não serve
+como proxy — um módulo de dados com 40 repositórios pequenos é saudável e um
+domínio com 6 arquivos de 900 linhas é doente, e a contagem premia o segundo.
+
+Relate os dois separados: o número (V10, verificável) e o julgamento (leitura,
+com o arquivo e a frase que não fecha).
+
+### 3.1. Postura de risco
 
 - Caminho para produção alcançável pelo agente (regra A1/A2)
 - Segredo versionado ou legível (A5)

@@ -116,7 +116,9 @@ gerador — e não é reproduzível entre execuções.
 ### Trilho A — Greenfield
 
 Resolvido pelo scaffold. Sequência: copiar; renomear módulos para o domínio real;
-ajustar os paths da config de fronteira junto; preencher ambiente e deploy;
+ajustar os paths da config de fronteira junto; instalar dependências (sem
+`typescript-eslint` o lint do gate falha por config, não por código); preencher
+ambiente e deploy;
 substituir o exemplo pelo primeiro caso de uso real; **plantar violação e confirmar
 que o gate reprova** `V9 → R3`.
 
@@ -129,7 +131,7 @@ que parece.
 |---|---|---|---|
 | **0** | auditoria, relatório | não | relatório aponta instrução falsa quando existe |
 | **1** | hooks, permissões, comandos, dono, teto | não | gate roda, passa hoje, reprova violação plantada |
-| **2** | **catraca** | não | baseline commitado; violação nova reprova, antiga não |
+| **2** | **catracas** (fronteira e tamanho) | não | dois baselines commitados; violação nova reprova, antiga não; arquivo acima do teto não cresce |
 | **3** | contexto: raiz enxuta + `CLAUDE.md` por módulo existente | não | toda afirmação executa |
 | **4** | roster onda 1: revisor de mudança, arquiteto | não | cada um declara o que não repete `G3` |
 | **5** | piloto de modularização | **sim** | fora do escopo do harness |

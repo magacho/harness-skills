@@ -19,10 +19,13 @@ fail() { printf '%s\n' "$1" | head -40 >&2; exit 2; }
 # 1. lint na coleção, read-only (não escreve: outra janela pode estar editando)
 lint=$(npx eslint --max-warnings=0 "${files[@]}" 2>&1) || fail "$lint"
 
-# 2. fronteiras de módulo — o gate arquitetural
-bnd=$(npx depcruise --config .dependency-cruiser.js modules 2>&1) || fail "$bnd"
+# 2. fronteiras de módulo — o gate arquitetural, com catraca
+bnd=$(./.harness/gate-boundaries.sh 2>&1); [[ $? -eq 1 ]] && fail "$bnd"
 
-# 3. typecheck do projeto, output filtrado pela coleção
+# 3. tamanho — arquivo acima do teto não cresce (V10 → R4)
+sz=$(./.harness/gate-size.sh 2>&1); [[ $? -eq 1 ]] && fail "$sz"
+
+# 4. typecheck do projeto, output filtrado pela coleção
 if ! tsc_out=$(pnpm typecheck 2>&1); then
   rel=$(printf '%s\n' "${files[@]}" | sed "s|^$PWD/||")
   mine=$(grep -F -f <(printf '%s\n' "$rel") <<<"$tsc_out")

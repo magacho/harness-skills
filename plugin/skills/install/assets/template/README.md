@@ -33,7 +33,7 @@ verificação automática, fronteiras de módulo executáveis e ops com stg/prd.
 |---|---|---|---|
 | CLAUDE.md por módulo | sempre em contexto | zero | intenção |
 | prettier | por edição | ~200ms | formatação |
-| eslint + depcruise + tsc | por turno (Stop) | segundos | fronteira, tipo, lint |
+| eslint + catracas + tsc | por turno (Stop) | segundos | fronteira, tamanho, tipo, lint |
 | subagente architect | pré-PR / semanal | caro | acoplamento por runtime |
 | suíte completa | CI | minutos | regressão |
 

@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Evals das skills. Skill que modifica repositório alheio sem eval é risco não
 # medido — e a instalação escreve.
+#
+# Este arquivo é só o corredor: caminhos, contadores, o par t()/s(), a sonda de
+# rede e o construtor de fixture. Os testes moram em evals/cases/*.sh, uma
+# família por arquivo, e são SOURCED — não subshell — para que os contadores
+# sejam os mesmos.
+#
+#   ./evals/run.sh                    roda tudo
+#   ./evals/run.sh 70-catraca-tamanho roda um caso (prefixo basta)
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 A=plugin/skills/audit/scripts
@@ -19,314 +27,42 @@ s() { echo "  skip $1 — $2"; skip=$((skip+1)); }
 rede=0
 if timeout 120 npx --yes --package dependency-cruiser depcruise --version >/dev/null 2>&1; then rede=1; fi
 
-# ===========================================================================
-echo "→ audit / detect-stack"
-t "identifica node-ts no template"        "$A/detect-stack.sh $T | grep -q '\"stack\": \"node-ts\"'"
-t "identifica harness existente"          "$A/detect-stack.sh $T | grep -q '\"settings\": true'"
-t "conta CLAUDE.md de módulo"             "[ \$($A/detect-stack.sh $T | grep -o '\"claude_md_module_count\": [0-9]*' | awk '{print \$2}') -ge 5 ]"
-t "declara stack sem adaptador"           "$A/detect-stack.sh $F/python-sem-adaptador | grep -q 'unsupported'"
-
-# Regressão: o audit reportava boundary_config=false e baseline=false num repo
-# que TINHA os dois. Procurava .dependency-cruiser.js (o instalador escreve
-# .cjs) e o baseline NATIVO da ferramenta em vez de .harness/baseline.json —
-# ficava cego para a instalação que a skill irmã acabara de fazer.
-RI=$W/repo-instalado
-mkdir -p "$RI/.harness" && echo '{}' > "$RI/package.json"
-: > "$RI/.dependency-cruiser.cjs"; echo '[]' > "$RI/.harness/baseline.json"
-printf '{"harness_version":"0.2.0","owner":"Fulano","autonomy_ceiling":"supervisionado"}\n' \
-  > "$RI/.harness/harness.json"
-t "enxerga a config .cjs que o instalador escreve" \
-  "$A/detect-stack.sh $RI | jq -e '.harness.boundary_config == true'"
-t "enxerga o baseline do harness (V8)"    "$A/detect-stack.sh $RI | jq -e '.harness.baseline == true'"
-t "distingue baseline nativo do da catraca" \
-  "$A/detect-stack.sh $RI | jq -e '.harness.baseline_nativo == false'"
-t "lê o dono registrado (D6)"             "$A/detect-stack.sh $RI | jq -e '.harness.dono == \"Fulano\"'"
-t "lê o teto de autonomia (A6)"           "$A/detect-stack.sh $RI | jq -e '.harness.teto_de_autonomia == \"supervisionado\"'"
-
-echo "→ audit / check-claims (regra C4)"
-t "template não tem instrução falsa"      "$A/check-claims.sh $T"
-t "detecta instrução falsa no fixture"    "! $A/check-claims.sh $F/legado-com-instrucao-falsa"
-t "aponta exatamente 2 falsas"            "{ $A/check-claims.sh $F/legado-com-instrucao-falsa || true; } | grep -q 'falsas=2'"
-t "repo sem CLAUDE.md não quebra"         "$A/check-claims.sh $F/sem-harness | grep -q SEM_CLAUDE_MD"
-
-# Regressão: só scripts de package.json eram verificados. O CLAUDE.md que o
-# próprio harness gera cita ./.harness/gate-boundaries.sh — apagar o gate não
-# aparecia como instrução falsa, e o audit reportava falsas=0.
-CP=$W/claims-caminho
-mkdir -p "$CP"; echo '{"scripts":{}}' > "$CP/package.json"
-printf '# x\n\n- `./.harness/gate-boundaries.sh` — fronteiras\n' > "$CP/CLAUDE.md"
-t "acusa caminho citado e ausente (C4)"   "! $A/check-claims.sh $CP"
-t "e diz que o caminho não existe"        "{ $A/check-claims.sh $CP || true; } | grep -q 'não existe'"
-mkdir -p "$CP/.harness"; printf '#!/bin/sh\n' > "$CP/.harness/gate-boundaries.sh"
-t "caminho presente mas não executável reprova" "! $A/check-claims.sh $CP"
-chmod +x "$CP/.harness/gate-boundaries.sh"
-t "caminho presente e executável passa"   "$A/check-claims.sh $CP"
-
-# grep -q fecha o pipe ao primeiro casamento e, com pipefail ligado, o produtor
-# morre de SIGPIPE: o pipeline sai 141 mesmo tendo casado. Aqui o grep drena a
-# entrada; a saída já é descartada por t().
-echo "→ comando /harness:version"
-V=plugin/scripts/harness-version.sh
-export CLAUDE_PLUGIN_ROOT="$PWD/plugin"
-t "reporta a versão em execução"        "$V . | grep 'skill em execução'"
-t "e a versão bate com o plugin.json"   "$V . | grep \"$(jq -r .version plugin/.claude-plugin/plugin.json)\""
-t "repo sem harness não quebra"         "$V $F/sem-harness | grep 'nenhum harness instalado'"
-t "e sugere o audit, não a instalação"  "$V $F/sem-harness | grep 'harness:audit'"
-VR=$W/com-harness; mkdir -p "$VR/.harness"
-printf '{"harness_version":"0.0.9","owner":"Fulano","autonomy_ceiling":"supervisionado","boundary":{"adapter":"node"}}\n' > "$VR/.harness/harness.json"
-echo '[]' > "$VR/.harness/baseline.json"
-t "lê a versão que instalou o repo"     "$V $VR | grep '0.0.9'"
-t "acusa divergência de versão"         "$V $VR | grep 'instalado por outra versão'"
-t "e diz que reinstalar é seguro (D3)"  "$V $VR | grep 'idempotente'"
-t "mostra o dono (D6)"                  "$V $VR | grep Fulano"
-printf '{"harness_version":"0.0.9","autonomy_ceiling":"supervisionado"}\n' > "$VR/.harness/harness.json"
-t "dono ausente é acusado como D6"      "$V $VR | grep 'NÃO REGISTRADO'"
-unset CLAUDE_PLUGIN_ROOT
-
-echo "→ audit / read-only"
-before=$(find $T $F -type f -newermt '-1 second' 2>/dev/null | wc -l)
-$A/detect-stack.sh $T >/dev/null; $A/check-claims.sh $T >/dev/null
-after=$(find $T $F -type f -newermt '-1 second' 2>/dev/null | wc -l)
-t "auditoria não escreve arquivo"         "[ $before -eq $after ]"
-
-echo "→ audit / boundary-status (dimensão do baseline)"
-# Regressão: cruzava "src modules" fixo. Repo sem modules/ devolvia ENOENT, não
-# media nada e ainda assim saía 0 — a dimensão do baseline, que é o número que
-# decide se a catraca é obrigatória, voltava vazia com cara de sucesso.
-SA=$W/sem-alvo; mkdir -p "$SA"; echo '{"name":"x"}' > "$SA/package.json"
-t "sem diretório de código sai 3, não 0"  "! $A/boundary-status.sh $SA"
-t "e diz que não é verde"                 "{ $A/boundary-status.sh $SA 2>&1 || true; } | grep -q 'NÃO é verde'"
-t "stack sem adaptador declara a lacuna"  "$A/boundary-status.sh $F/python-sem-adaptador | grep -q ADAPTADOR_INDISPONIVEL"
-if [[ $rede -eq 1 ]]; then
-  t "mede o grafo com código em src/"     "$A/boundary-status.sh $F/legado-com-ciclos | jq -e '.violacoes == 2'"
-  t "reporta os alvos que de fato cruzou" "$A/boundary-status.sh $F/legado-com-ciclos | jq -e '.alvos == [\"src\"]'"
-  t "decide se a catraca é obrigatória"   "$A/boundary-status.sh $F/legado-com-ciclos | jq -e '.catraca_obrigatoria == true'"
-  bs_antes=$(find $F/legado-com-ciclos -type f | sort | md5sum)
-  $A/boundary-status.sh $F/legado-com-ciclos >/dev/null 2>&1
-  bs_depois=$(find $F/legado-com-ciclos -type f | sort | md5sum)
-  t "sonda o grafo sem escrever no repo"  "[ '$bs_antes' = '$bs_depois' ]"
-else
-  s "mede o grafo com código em src/"     "dependency-cruiser indisponível (sem rede)"
-  s "reporta os alvos que de fato cruzou" "dependency-cruiser indisponível (sem rede)"
-  s "decide se a catraca é obrigatória"   "dependency-cruiser indisponível (sem rede)"
-  s "sonda o grafo sem escrever no repo"  "dependency-cruiser indisponível (sem rede)"
-fi
-
-# ===========================================================================
-echo "→ install / adaptador de fronteira (contrato de quatro verbos)"
-t "detect reconhece stack node"           "$I/adapters/node.sh detect $F/legado-com-ciclos"
-t "detect recusa stack alheia"            "! $I/adapters/node.sh detect $F/python-sem-adaptador"
-t "generate-config só proíbe ciclo e órfão" \
-  "$I/adapters/node.sh generate-config $F/legado-com-ciclos src | grep -q 'sem-ciclos' && ! $I/adapters/node.sh generate-config $F/legado-com-ciclos src | grep -qE 'from: \{ path: \"\^(modules|src)/[a-z]'"
-t "normalize devolve origem/destino/regra" \
-  "$I/adapters/node.sh normalize $F/depcruise-bruto.json | jq -e 'length==2 and all(has(\"origem\") and has(\"destino\") and has(\"regra\"))'"
-t "normalize é estável entre execuções" \
-  "diff <($I/adapters/node.sh normalize $F/depcruise-bruto.json) <($I/adapters/node.sh normalize $F/depcruise-bruto.json)"
-t "catraca não usa knownViolations da ferramenta (V8)" \
-  "! $I/adapters/node.sh generate-config $F/legado-com-ciclos src | grep -qE '^\s*knownViolations'"
-
-# ===========================================================================
-echo "→ install / grafo TypeScript (regressão do alvo nu)"
-# O dependency-cruiser 18 não expande diretório nu para .ts/.tsx: devolvia zero
-# módulo cruzado e "sem violações". Todo projeto TS recebia um gate que nunca
-# verificou nada. Todo fixture com grafo era JavaScript — onde o diretório nu
-# funciona — e por isso a suíte inteira ficava verde com o defeito presente.
+# Fixture instalado, um por caso. Antes havia um só $W/legado atravessando meia
+# suíte: a ordem dos blocos era carregada e invisível, e mexer num quebrava
+# outro três telas abaixo. Custa ~0,8s por chamada e devolve a independência.
 #
-# Estes evals afirmam totalCruised > 0 E a contagem esperada: um eval que só
-# checasse "saiu 0" continuaria passando com o bug.
-if [[ $rede -eq 1 ]]; then
-  TSF=$F/ts-com-ciclo
-  TSCFG=$W/dc-ts.cjs
-  $I/adapters/node.sh generate-config $TSF src > $TSCFG 2>/dev/null
-  TSOUT=$W/ts-run.json
-  $I/adapters/node.sh run $TSF $TSCFG src > $TSOUT 2>/dev/null
-  t "cruza módulo em projeto TypeScript"  "[ \$(jq '.summary.totalCruised' $TSOUT) -gt 0 ]"
-  t "cruza exatamente os 3 do fixture"    "jq -e '.summary.totalCruised == 3' $TSOUT"
-  t "acha o ciclo e o órfão (2 violações)" \
-    "[ \$($I/adapters/node.sh normalize $TSOUT | jq 'length') -eq 2 ]"
-  t "o ciclo em .ts é reportado"          "$I/adapters/node.sh normalize $TSOUT | jq -e 'any(.regra == \"sem-ciclos\")'"
-  # Import TS sem extensão ("./faturar"): a v18 registrava o especificador cru,
-  # a regra de direção não casava e virava violação fantasma.
-  t "import sem extensão é resolvido"     "$I/adapters/node.sh normalize $TSOUT | jq -e 'all(.[].destino; startswith(\".\") | not)'"
-  t "e resolve para o caminho real"       "$I/adapters/node.sh normalize $TSOUT | jq -e 'any(.destino == \"src/cobranca/faturar.ts\")'"
-  # A prova de que a transformação de alvo é o que salva: entregando o
-  # diretório nu direto à ferramenta, o mesmo fixture cruza zero.
-  nu=$(cd $TSF && npx --yes --package dependency-cruiser depcruise --config $TSCFG --output-type json src 2>/dev/null | jq '.summary.totalCruised')
-  t "diretório nu cruzaria zero (o defeito)" "[ \"${nu:-0}\" -eq 0 ]"
-  t "audit mede baseline em projeto TS"   "$A/boundary-status.sh $TSF | jq -e '.violacoes == 2'"
-  t "e não sai 3 num projeto TS"          "$A/boundary-status.sh $TSF >/dev/null"
-else
-  for n in "cruza módulo em projeto TypeScript" "cruza exatamente os 3 do fixture" \
-           "acha o ciclo e o órfão (2 violações)" "o ciclo em .ts é reportado" \
-           "import sem extensão é resolvido" "e resolve para o caminho real" \
-           "diretório nu cruzaria zero (o defeito)" "audit mede baseline em projeto TS" \
-           "e não sai 3 num projeto TS"; do
-    s "$n" "dependency-cruiser indisponível (sem rede)"
-  done
-fi
+#   legado_instalado <nome> [--god]   → $W/<nome> instalado, $W/<nome>.plan.json
+legado_instalado() {
+  local nome="${1:?uso: legado_instalado <nome> [--god]}" god="${2:-}" d="$W/$1"
+  # `cp -a src dst` com dst existente copia PARA DENTRO de dst, e o caso segue
+  # medindo uma árvore aninhada com cara de sucesso. Dois casos com o mesmo
+  # nome é erro de programação: reprova aqui, não três telas abaixo.
+  [[ -e "$d" ]] && { echo "legado_instalado: '$nome' já existe — dois casos usam o mesmo nome." >&2; return 1; }
+  cp -a "$F/legado-com-ciclos" "$d"
+  if [[ "$god" == --god ]]; then
+    python3 -c "open('$d/src/cobranca/gigante.js','w').write(chr(10).join(f'const l{i} = {i};' for i in range(1,451))+chr(10))"
+  fi
+  "$I/plan-install.sh" "$d" > "$W/$nome.plan.json" 2>/dev/null
+  "$I/gen-config.sh" "$d" --plan "$W/$nome.plan.json" \
+    --owner "Dona Eval <eval@exemplo>" --fase 1 > "$W/$nome.f1.json" 2>/dev/null
+}
 
-echo "→ install / plano (read-only)"
-$I/plan-install.sh $F/legado-com-ciclos > "$W/plan-legado.json" 2>/dev/null
-$I/plan-install.sh $F/repo-vazio        > "$W/plan-vazio.json" 2>/dev/null
-$I/plan-install.sh $F/nao-merece-harness > "$W/plan-nao.json" 2>/dev/null
-t "repo vazio → modo scaffold"            "jq -e '.modo==\"scaffold\"' $W/plan-vazio.json"
-t "repo com código → modo retrofit"       "jq -e '.modo==\"retrofit\"' $W/plan-legado.json"
-t "módulos vêm do projeto, não do template (C6)" \
-  "jq -e '(.modulos | index(\"src/faturamento\")) and (.modulos | index(\"src/cobranca\"))' $W/plan-legado.json"
-t "nunca inventa nome de módulo do template" \
-  "! jq -r '.modulos[]' $W/plan-legado.json | grep -qxE '(modules/)?(domain|data)'"
-t "lint verde entra no gate"              "jq -e '.gates_hoje.lint.estado==\"verde\"' $W/plan-legado.json"
-t "typecheck vermelho fica fora do gate"  "jq -e '.gates_hoje.typecheck.estado==\"vermelho\"' $W/plan-legado.json"
-t "typecheck vermelho vira pendência declarada" \
-  "jq -e '[.pendencias[] | select(test(\"typecheck reprova\"))] | length == 1' $W/plan-legado.json"
-t "plano não escreve no repositório" \
-  "[ -z \"\$(find $F/legado-com-ciclos -newermt '-2 seconds' -type f)\" ]"
+filtro="${1:-}"
+casos=0
+for caso in evals/cases/*.sh; do
+  [[ -z "$filtro" || "$(basename "$caso")" == "$filtro"* ]] || continue
+  casos=$((casos+1))
+  # shellcheck source=/dev/null
+  source "$caso"
+done
 
-echo "→ install / eval negativo: repo que não deveria receber harness"
-t "script de uso único é reprovado"       "jq -e '.merece_harness.veredito==false' $W/plan-nao.json"
-t "e a razão é dita, não só o veredito"   "jq -e '.merece_harness.razoes | length > 0' $W/plan-nao.json"
-t "legado de verdade é aprovado"          "jq -e '.merece_harness.veredito==true' $W/plan-legado.json"
-
-# ===========================================================================
-echo "→ install / modo A em legado com violações"
-cp -a $F/legado-com-ciclos "$W/legado"
-$I/plan-install.sh "$W/legado" > "$W/plan.json" 2>/dev/null
-$I/gen-config.sh "$W/legado" --plan "$W/plan.json" --owner "Dona Eval <eval@exemplo>" --fase 1 > "$W/f1.json" 2>/dev/null
-t "fase 1 instala os quatro hooks" \
-  "[ \$(ls $W/legado/.claude/hooks/*.sh 2>/dev/null | wc -l) -eq 4 ]"
-t "hooks saem executáveis"                "[ -x $W/legado/.claude/hooks/verify.sh ]"
-t "shebang continua na primeira linha"    "head -1 $W/legado/.claude/hooks/verify.sh | grep -q '^#!'"
-t "gate é comando invocável à mão (D5)"   "[ -x $W/legado/.harness/gate-boundaries.sh ]"
-t "adaptador vai para o repositório (R8)" "[ -x $W/legado/.harness/adapters/node.sh ]"
-t "dono registrado (D6)"                  "jq -e '.owner==\"Dona Eval <eval@exemplo>\"' $W/legado/.harness/harness.json"
-t "teto default é supervisionado (A6)"    "jq -e '.autonomy_ceiling==\"supervisionado\"' $W/legado/.harness/harness.json"
-t "typecheck vermelho não virou gate"     "jq -e '.gates.typecheck==null' $W/legado/.harness/harness.json"
-t "lint verde virou gate"                 "jq -e '.gates.lint!=null' $W/legado/.harness/harness.json"
-t "produção negada em permissão (A2)"     "jq -e '[.permissions.deny[] | select(test(\"prd|prod\"))] | length > 0' $W/legado/.claude/settings.json"
-t "leitura de .env negada (A5)"           "jq -e '[.permissions.deny[] | select(test(\"env\"))] | length > 0' $W/legado/.claude/settings.json"
-t "produção negada também em hook (A2)"   "grep -q 'deny' $W/legado/.claude/hooks/guard-prod.sh"
-t "guarda anti-loop presente (V5)"        "jq -e '.anti_loop_tries==3' $W/legado/.harness/harness.json"
-t "/ship só cita comando que existe (C4)" "! grep -q 'npm run typecheck' $W/legado/.claude/commands/ship.md"
-t "nenhum arquivo-fonte foi tocado" \
-  "diff -r --exclude=.claude --exclude=.harness --exclude='*.cjs' $F/legado-com-ciclos $W/legado"
-
-echo "→ install / fase 2: a catraca"
-$I/gen-baseline.sh "$W/legado" --from-raw "$F/depcruise-bruto.json" > "$W/f2.json" 2>/dev/null
-t "baseline não vazio em legado (V7)"     "jq -e '.violacoes_congeladas==2' $W/f2.json"
-t "baseline no formato do harness (V8)" \
-  "jq -e 'all(has(\"origem\") and has(\"destino\") and has(\"regra\"))' $W/legado/.harness/baseline.json"
-t "congela o ciclo que já existia"        "jq -e '[.[] | select(.regra==\"sem-ciclos\")] | length==1' $W/legado/.harness/baseline.json"
-t "catraca declarada como ligada"         "jq -e '.catraca | test(\"ligada\")' $W/f2.json"
-
-echo "→ install / o baseline só encolhe (V7)"
-jq '[.[0]]' "$W/legado/.harness/baseline.json" > "$W/menor.json" && mv "$W/menor.json" "$W/legado/.harness/baseline.json"
-t "recusa regerar baseline que cresceria" \
-  "! $I/gen-baseline.sh $W/legado --from-raw $F/depcruise-bruto.json"
-t "e diz por quê" \
-  "{ $I/gen-baseline.sh $W/legado --from-raw $F/depcruise-bruto.json 2>&1 || true; } | grep -q 'só encolhe'"
-t "--force existe, mas é explícito" \
-  "$I/gen-baseline.sh $W/legado --from-raw $F/depcruise-bruto.json --force"
-
-echo "→ install / fase 3: contexto"
-$I/gen-config.sh "$W/legado" --plan "$W/plan.json" --owner "Dona Eval" --fase 3 > "$W/f3.json" 2>/dev/null
-t "um CLAUDE.md por módulo existente (C3)" \
-  "[ -f $W/legado/src/faturamento/CLAUDE.md ] && [ -f $W/legado/src/cobranca/CLAUDE.md ]"
-t "módulo declara o que possui e o que nunca importa" \
-  "grep -q 'Possui:' $W/legado/src/comum/CLAUDE.md && grep -q 'Nunca importa:' $W/legado/src/comum/CLAUDE.md"
-t "módulo de módulo cabe em ~15 linhas (C5)" \
-  "[ \$(wc -l < $W/legado/src/comum/CLAUDE.md) -le 15 ]"
-t "não sobrescreve CLAUDE.md alheio (D3)" \
-  "grep -q 'pnpm build' $W/legado/CLAUDE.md"
-t "e deixa a proposta ao lado para merge" \
-  "[ -f $W/legado/.harness/CLAUDE.md.proposto ]"
-t "a proposta cabe em ~60 linhas (C5)"    "[ \$(wc -l < $W/legado/.harness/CLAUDE.md.proposto) -le 60 ]"
-t "a proposta não cita comando inexistente (C4)" \
-  "! grep -q 'pnpm build' $W/legado/.harness/CLAUDE.md.proposto"
-
-echo "→ install / idempotência (D3)"
-h1=$(find "$W/legado" -type f -exec sha256sum {} \; | sort -k2 | sha256sum)
-$I/gen-config.sh "$W/legado" --plan "$W/plan.json" --owner "Outro Dono" --fase 1 >/dev/null 2>&1
-$I/gen-config.sh "$W/legado" --plan "$W/plan.json" --owner "Outro Dono" --fase 3 >/dev/null 2>&1
-h2=$(find "$W/legado" -type f -exec sha256sum {} \; | sort -k2 | sha256sum)
-t "rodar duas vezes não altera nada"      "[ '$h1' = '$h2' ]"
-t "e não troca o dono já registrado"      "jq -e '.owner==\"Dona Eval <eval@exemplo>\"' $W/legado/.harness/harness.json"
-echo "# nota do time" >> "$W/legado/src/comum/CLAUDE.md"
-$I/gen-config.sh "$W/legado" --plan "$W/plan.json" --owner "Dona Eval" --fase 3 > "$W/f3b.json" 2>/dev/null
-t "customização manual é preservada"      "grep -q 'nota do time' $W/legado/src/comum/CLAUDE.md"
-t "e o pulo é relatado, não silenciado" \
-  "jq -e '[.pulados[] | select(test(\"src/comum\"))] | length==1' $W/f3b.json"
-
-echo "→ install / dono é obrigatório (D6)"
-t "gen-config recusa sem dono" \
-  "! $I/gen-config.sh $W/legado --plan $W/plan.json --fase 1"
-t "scaffold recusa sem dono" \
-  "! $I/scaffold.sh $F/repo-vazio"
-
-# ===========================================================================
-echo "→ install / stack sem adaptador (D4)"
-cp -a $F/python-sem-adaptador "$W/py"; mkdir -p "$W/py/src/cobrancas"
-echo 'def cobrar(): pass' > "$W/py/src/cobrancas/cobrar.py"
-$I/plan-install.sh "$W/py" > "$W/plan-py.json" 2>/dev/null
-$I/gen-config.sh "$W/py" --plan "$W/plan-py.json" --owner "Dona Eval" --fase 1 >/dev/null 2>&1
-t "instala todo o resto mesmo assim"      "[ -x $W/py/.claude/hooks/verify.sh ] && [ -f $W/py/.claude/settings.json ]"
-t "não instala adaptador que não existe"  "[ ! -e $W/py/.harness/adapters ]"
-t "registra a lacuna no harness.json"     "jq -e '.boundary.adapter==null and (.boundary.reason|length>0)' $W/py/.harness/harness.json"
-t "a lacuna aparece nas pendências do plano" \
-  "jq -e '[.pendencias[] | select(test(\"D4\"))] | length==1' $W/plan-py.json"
-t "catraca sai 3 e declara, não aborta" \
-  "$I/gen-baseline.sh $W/py; [ \$? -eq 3 ]"
-t "e diz em voz alta o que falta" \
-  "{ $I/gen-baseline.sh $W/py 2>&1 || true; } | grep -q 'SEM CATRACA'"
-t "fumaça sai 3 e explica por quê" \
-  "{ $I/smoke-test.sh $W/py 2>&1 || true; } | grep -q 'SEM TESTE DE FUMAÇA'"
-t "gate instalado também se declara indisponível" \
-  "{ $W/py/.harness/gate-boundaries.sh 2>&1 || true; } | grep -q 'INDISPONÍVEL'"
-
-# ===========================================================================
-echo "→ install / modo B: repositório vazio"
-mkdir -p "$W/novo"
-$I/scaffold.sh "$W/novo" --owner "Dona Eval <eval@exemplo>" \
-  --modules "shared=comum,domain=faturamento,data=persistencia,api=http,web=painel" > "$W/scaf.json" 2>/dev/null
-t "copia o template inteiro"              "jq -e '.copiados >= 30' $W/scaf.json"
-t "renomeia os cinco módulos"             "jq -e '.renomeados | length == 5' $W/scaf.json"
-t "os diretórios têm os nomes pedidos"    "[ -d $W/novo/modules/faturamento ] && [ ! -d $W/novo/modules/domain ]"
-t "imports acompanham a renomeação"       "grep -q 'faturamento/src/invoice' $W/novo/modules/http/src/pay-invoice.handler.ts"
-t "paths da config acompanham junto"      "grep -q 'modules/faturamento' $W/novo/.dependency-cruiser.js"
-t "alternação de regex também é renomeada" \
-  "! grep -qE '\\^modules/\\((domain|data|api|web)' $W/novo/.dependency-cruiser.js"
-t "nenhuma regra sobra apontando para módulo inexistente" \
-  "! grep -oE 'modules/[a-z]+' $W/novo/.dependency-cruiser.js | sort -u | grep -vxE 'modules/(comum|faturamento|persistencia|http|painel)' | grep -q ."
-t "CLAUDE.md não fica com nome velho (C4)" "! grep -qE '\\b(domain|shared)\\b' $W/novo/CLAUDE.md"
-t "dono registrado no modo B (D6)"        "jq -e '.owner==\"Dona Eval <eval@exemplo>\"' $W/novo/.harness/harness.json"
-t "um só mecanismo de gate nos dois modos" \
-  "grep -q 'gate-boundaries.sh' $W/novo/.claude/hooks/verify.sh"
-t "gate e adaptador vão para o repositório" \
-  "[ -x $W/novo/.harness/gate-boundaries.sh ] && [ -x $W/novo/.harness/adapters/node.sh ]"
-t "baseline nasce vazio em projeto novo"  "jq -e 'length==0' $W/novo/.harness/baseline.json"
-echo 'const x = 1;' > "$W/novo/intruso.js"
-t "recusa scaffold onde já há código-fonte" \
-  "! $I/scaffold.sh $W/novo --owner 'Dona Eval'"
-rm -f "$W/novo/intruso.js"
-
-# ===========================================================================
-echo "→ install / catraca e V9 de ponta a ponta"
-if [[ $rede -eq 1 ]]; then
-  cp -a $F/legado-com-ciclos "$W/e2e"
-  $I/plan-install.sh "$W/e2e" > "$W/plan-e2e.json" 2>/dev/null
-  $I/gen-config.sh "$W/e2e" --plan "$W/plan-e2e.json" --owner "Dona Eval" --fase 1 >/dev/null 2>&1
-  $I/gen-baseline.sh "$W/e2e" >/dev/null 2>&1
-  t "gate passa com o baseline congelado"   "$W/e2e/.harness/gate-boundaries.sh"
-  t "violação plantada reprova (V9 → R3)"   "$I/smoke-test.sh $W/e2e"
-  t "e a violação plantada foi removida"    "[ -z \"\$(find $W/e2e -name __harness_smoke__)\" ]"
-  t "gate recusa cruzar zero módulo"        "! $I/adapters/node.sh run $W/e2e .dependency-cruiser.cjs nao-existe"
-else
-  s "gate passa com o baseline congelado"   "dependency-cruiser indisponível (sem rede)"
-  s "violação plantada reprova (V9 → R3)"   "dependency-cruiser indisponível (sem rede)"
-  s "e a violação plantada foi removida"    "dependency-cruiser indisponível (sem rede)"
-  s "gate recusa cruzar zero módulo"        "dependency-cruiser indisponível (sem rede)"
+if [[ $casos -eq 0 ]]; then
+  echo "nenhum caso casou com '$filtro'. Disponíveis:" >&2
+  basename -s .sh -a evals/cases/*.sh | sed 's/^/  /' >&2
+  exit 64
 fi
 
 echo
-echo "pass=$pass fail=$fail skip=$skip"
+echo "pass=$pass fail=$fail skip=$skip  ($casos caso(s))"
 [[ $skip -gt 0 ]] && echo "($skip eval(s) pulado(s) por dependência externa — declarado, não silenciado)"
 [[ $fail -eq 0 ]]

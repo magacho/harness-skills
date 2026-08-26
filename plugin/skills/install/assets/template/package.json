@@ -5,6 +5,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint modules",
     "boundaries": "./.harness/gate-boundaries.sh",
+    "size": "./.harness/gate-size.sh",
     "boundaries:graph": "depcruise --config .dependency-cruiser.js --output-type dot 'modules/**/*.{ts,tsx,js,jsx}' | dot -Tsvg > docs/dependency-graph.svg",
     "test": "vitest run"
   },
@@ -13,6 +14,7 @@
     "eslint": "^9",
     "prettier": "^3",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8",
     "vitest": "^2"
   }
 }

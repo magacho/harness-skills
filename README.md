@@ -68,16 +68,45 @@ o agente; no CI o que só precisa impedir o merge. As regras completas estão em
 
 ## Catraca
 
-Em repositório legado você não fica verde. O gate opera sobre um baseline de
-violações conhecidas e falha **só no que é novo** — e o baseline só encolhe. Isso
-converte "40 erros, gate inútil" em "40 erros parados": a decadência para antes de
+Em repositório legado você não fica verde. O gate opera sobre um baseline do que
+já existe e falha **só no que é novo** — e o baseline só encolhe. Isso converte
+"40 erros, gate inútil" em "40 erros parados": a decadência para antes de
 qualquer refactor.
 
-É a regra que torna o harness aplicável a código que já existe.
+É a regra que torna o harness aplicável a código que já existe. São duas
+catracas, com semânticas diferentes de propósito:
+
+| | fronteira | tamanho |
+|---|---|---|
+| pergunta | esta dependência existe? | este arquivo passou do teto? |
+| baseline | conjunto de violações | `{caminho: linhas}` |
+| falha quando | aparece violação nova | arquivo novo passa do teto, ou um antigo cresce |
+| depende de ferramenta | sim, por adaptador | não — contagem de linha vale em toda linguagem |
+
+Em projeto novo os dois baselines nascem vazios, e aí o teto age como limite
+absoluto. Um mecanismo, dois regimes.
+
+## God file e god function
+
+O que a catraca de tamanho protege não é estética: é R4 — *uma mudança típica
+cabe num módulo, e portanto num contexto pequeno*. Arquivo de 2.000 linhas obriga
+a carregar tudo para mudar uma coisa.
+
+A divisão de trabalho é deliberada. **Arquivo** é da catraca do harness, porque
+precisa valer em legado e em qualquer linguagem. **Função e ramificação** são do
+linter, porque quem sabe onde uma função começa é o parser — no template,
+`max-lines-per-function` em 60 e `complexity` em 10. Nunca as duas no mesmo
+lugar: duas respostas para a mesma pergunta divergem na primeira correção.
+
+Contagem de arquivos por módulo **não** é gate. Mede ao contrário do que se
+quer: um módulo de dados com 40 repositórios pequenos é saudável, um domínio com
+6 arquivos de 900 linhas é doente, e a contagem premia o segundo.
+Responsabilidade dupla continua sendo julgamento, e o lugar dela é o subagente
+`architect`.
 
 ## Status
 
-`0.2.3` — diagnostica e instala.
+`0.2.5` — diagnostica e instala.
 
 | | disponível |
 |---|---|
@@ -115,6 +144,7 @@ possível.
     docs/INTENT.md      por quê — problema, resultados (R1–R12), o que não queremos
     docs/HARNESS.md     regras — 45 regras, cada uma rastreando a um resultado
     docs/PLAN.md        como — construção da skill, implantação, deploy
+    docs/CONFORMIDADE.md  mapa de validação — cada critério de §12, o mecanismo e o tipo
     docs/adapters/      contrato de adaptador por linguagem
     evals/              fixtures e testes dos scripts
     scripts/validate.sh validação do próprio produto antes do release

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Caso: o merge de .claude/settings.json. Um reinstall apagava as negações que o
+# projeto tinha escrito à mão e reportava sucesso — o defeito mais caro que o
+# harness já teve, porque o dano era invisível e o arquivo é justamente onde
+# mora a garantia (A2/A8 → R5).
+MS=$I/merge-settings.jq
+m() { jq -c -n -f "$MS" --slurpfile v "$1" --slurpfile n "$2"; }
+D=$W/ms; mkdir -p "$D"
+
+echo "→ install / merge de settings.json (a função, isolada)"
+printf '{"permissions":{"deny":["TRAVA_A","TRAVA_B"]}}' > "$D/proj.json"
+printf '{"permissions":{"deny":["TEMPLATE_X"]}}'        > "$D/harn.json"
+t "negação do projeto sobrevive (A7)" \
+  "m $D/proj.json $D/harn.json | jq -e '.permissions.deny == [\"TEMPLATE_X\",\"TRAVA_A\",\"TRAVA_B\"]'"
+t "e a do harness entra junto"        "m $D/proj.json $D/harn.json | jq -e '.permissions.deny | index(\"TEMPLATE_X\")'"
+
+# `.[0] * .[1]` do jq parece resolver e não resolve: em array, a direita
+# SUBSTITUI. É a linha exata que causou a perda.
+t "prova que o merge ingênuo perderia" \
+  "! jq -s '.[0] * .[1]' $D/proj.json $D/harn.json | jq -e '.permissions.deny | index(\"TRAVA_A\")'"
+
+printf '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./meu-guard.sh"}]}]}}' > "$D/ph.json"
+printf '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-prod.sh"}]}]}}' > "$D/hh.json"
+t "hook do projeto sobrevive ao merge" \
+  "m $D/ph.json $D/hh.json | jq -e '[.hooks.PreToolUse[].hooks[0].command] | index(\"./meu-guard.sh\")'"
+t "e o hook do harness entra"         "m $D/ph.json $D/hh.json | jq -e '.hooks.PreToolUse | length == 2'"
+
+# Substituir a entrada do harness, e não somá-la, é o que mantém a idempotência
+# quando a definição muda de versão. Somar+unique deixaria as duas.
+printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"${CLAUDE_PROJECT_DIR}/.claude/hooks/verify.sh","timeout":120}]}]}}' > "$D/v1.json"
+printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"${CLAUDE_PROJECT_DIR}/.claude/hooks/verify.sh","timeout":240}]}]}}' > "$D/v2.json"
+t "hook do harness é substituído, não somado" "m $D/v1.json $D/v2.json | jq -e '.hooks.Stop | length == 1'"
+t "e fica com a definição nova"               "m $D/v1.json $D/v2.json | jq -e '.hooks.Stop[0].hooks[0].timeout == 240'"
+
+printf '{"model":"sonnet","includeCoAuthoredBy":false}' > "$D/e1.json"
+printf '{"model":"opus"}'                               > "$D/e2.json"
+t "escalar: o novo vence"                     "m $D/e1.json $D/e2.json | jq -e '.model == \"opus\"'"
+t "chave do projeto que o harness não conhece fica" \
+  "m $D/e1.json $D/e2.json | jq -e '.includeCoAuthoredBy == false'"
+t "não inventa permissions que ninguém tinha" "m $D/e1.json $D/e2.json | jq -e 'has(\"permissions\") | not'"
+t "projeto sem settings: só o do harness"     "m /dev/null $D/harn.json | jq -e '.permissions.deny == [\"TEMPLATE_X\"]'"
+
+echo "→ install / merge no gerador: recusa em vez de perder"
+S=$W/ms-real
+legado_instalado ms-real
+# Reinstalação sobre customização: é o cenário que produziu 23 → 12 negações.
+cat > "$S/.claude/settings.json" <<'J'
+{"permissions":{"allow":["Bash(pnpm test:*)"],
+  "deny":["Bash(git tag -a v*)","Bash(pnpm etl:*)","Bash(gh workflow run*)",
+          "Read(./**/*key*.json)","mcp__supabase__apply_migration"]},
+ "hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./scripts/meu-guard.sh"}]}]},
+ "model":"opus"}
+J
+$I/gen-config.sh "$S" --plan "$W/ms-real.plan.json" --owner "Dona Eval" --fase 1 > "$W/ms.f1.json" 2>/dev/null
+t "as 5 negações do projeto sobrevivem ao reinstall" \
+  "jq -e '[.permissions.deny[] | select(test(\"etl|git tag|workflow|[*]key|supabase\"))] | length == 5' $S/.claude/settings.json"
+t "as do harness entraram por cima"     "jq -e '.permissions.deny | length > 10' $S/.claude/settings.json"
+t "o hook do projeto continua lá"       "jq -e '[.hooks.PreToolUse[].hooks[0].command] | index(\"./scripts/meu-guard.sh\")' $S/.claude/settings.json"
+t "e a chave que não é nossa também"    "jq -e '.model == \"opus\"' $S/.claude/settings.json"
+t "reinstalar de novo não muda um byte" \
+  "h=\$(sha256sum $S/.claude/settings.json); $I/gen-config.sh $S --plan $W/ms-real.plan.json --owner 'Dona Eval' --fase 1 >/dev/null 2>&1; [ \"\$h\" = \"\$(sha256sum $S/.claude/settings.json)\" ]"
+
+# JSON inválido é o único caminho em que o merge não pode ser feito. Antes o
+# fallback escrevia de qualquer forma; agora recusa, e diz que a garantia não
+# entrou — silêncio aqui é pior que erro.
+B=$W/ms-bad
+legado_instalado ms-bad
+printf '{"permissions": {"deny": ["A",]}' > "$B/.claude/settings.json"
+hb=$(sha256sum "$B/.claude/settings.json" | cut -d' ' -f1)
+$I/gen-config.sh "$B" --plan "$W/ms-bad.plan.json" --owner "Dona Eval" --fase 1 > "$W/msb.f1.json" 2>/dev/null
+t "settings inválido não é sobrescrito (D3)" "[ '$hb' = \"\$(sha256sum $B/.claude/settings.json | cut -d' ' -f1)\" ]"
+t "e não entra em escritos"                  "! jq -e '.escritos | map(select(test(\"settings\"))) | length > 0' $W/msb.f1.json"
+t "entra em pulados, com o motivo"           "jq -e '[.pulados[] | select(test(\"settings.json\"))] | length == 1' $W/msb.f1.json"
+t "dizendo que a garantia não foi instalada" \
+  "jq -r '.pulados[]' $W/msb.f1.json | grep -q 'PERMISSÕES NÃO INSTALADAS'"
+t "e deixa a proposta ao lado para merge à mão" "[ -f $B/.harness/settings.proposto.json ]"

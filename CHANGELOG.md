@@ -3,6 +3,147 @@
 Skill que modifica repositório alheio sem changelog é impossível de adotar com
 confiança.
 
+## [0.2.5] — 2026-08-26
+
+### Corrigido
+- **`gen-config.sh` apagava as negações de permissão do projeto no reinstall.**
+  O defeito mais caro que o harness teve, porque o dano era invisível e o arquivo
+  é justamente onde mora a garantia. A expressão de merge indexava `.[0]` **depois**
+  de `.[0] * .[1]`, onde o contexto já é o objeto mesclado — erro de tipo em toda
+  execução. O `|| jq -s '.[0] * .[1]'` engolia o erro, e o `*` do jq deixa o lado
+  direito **substituir** o array: um repositório com 23 negações customizadas
+  ficava com 12, perdendo as travas de tag semver, `pnpm etl:*`, `gh workflow
+  run`, leitura de `*key*.json` e três ferramentas MCP de escrita. O script
+  reportava `.claude/settings.json (merge)` e saía 0
+- **O mesmo caminho perdia hook do projeto.** `hooks.<evento>` é array, então o
+  `*` substituía a entrada do time pela do harness. Um `PreToolUse` próprio
+  desaparecia sem uma linha de aviso — pior que a perda de permissão, porque não
+  há como notar sem diff
+- **O fallback foi removido, não corrigido.** `expr || fallback` foi o que
+  transformou erro de sintaxe em perda de dados que reporta sucesso; consertar só
+  a expressão deixaria o padrão pronto para esconder o próximo erro. Agora, se o
+  merge não pode ser feito com segurança, o arquivo **não é tocado**, entra em
+  `pulados` dizendo `PERMISSÕES NÃO INSTALADAS (A2/A8 → R5)`, e a proposta fica em
+  `.harness/settings.proposto.json` para merge à mão — que é o que D3 já manda
+  fazer com tudo que foi editado à mão
+- `scaffold.sh` tinha a mesma família em menor escala: `jq ... && mv` sem `else`.
+  Falha de jq deixava o arquivo do template como estava, em silêncio. Agora avisa
+
+### Adicionado
+- **`scripts/merge-settings.jq`** — o merge saiu de dentro do gerador e virou
+  função com regra por caminho e teste próprio: união de conjunto em
+  `permissions.*`, substituição da entrada do harness em `hooks.*`, merge
+  recursivo no resto, escalar novo vence. A entrada do harness é reconhecida pelo
+  **caminho** (`.claude/hooks/{on-edit,verify,guard-prod,cleanup}.sh`) e não pelo
+  objeto inteiro: comparar o objeto deixaria a entrada velha para trás na primeira
+  vez que um timeout mudasse, e o repositório rodaria o hook duas vezes
+- **Duas invariantes verificadas contra o resultado**, depois do merge e antes de
+  escrever: nenhuma negação do projeto desapareceu (A7 → R5), e nenhum comando de
+  hook fora de `.claude/hooks/` desapareceu. A checagem é independente da lógica
+  do merge de propósito — guarda que reusa o que verifica esconde o próprio
+  defeito. O critério "fora de `.claude/hooks/`" evita enumerar os hooks do
+  harness, que mudam de versão para versão
+- Caso de eval `55-merge-settings` (21 testes): a união, a substituição, a
+  idempotência em três rodadas, e a recusa. Um dos testes afirma que **o merge
+  ingênuo perderia**, para que a intenção fique registrada onde alguém vai ler
+- `validate.sh` reprova a **família**, não a instância: `.[0]` indexado depois de
+  um `*`, `|| jq` como fallback, e a ausência de qualquer uma das invariantes.
+  Os três guards foram verificados quebrando o código de propósito (V9 aplicado
+  ao validador)
+
+- **`docs/CONFORMIDADE.md`** — mapa de validação: para cada um dos 17 critérios de
+  `HARNESS.md` §12, qual mecanismo o verifica, em que arquivo, se é determinístico
+  puro, garantia de permissão ou julgamento por leitura, e qual eval o prova. O
+  checklist dizia o que precisa ser verdade e não dizia quem verifica — e a
+  resposta não era a mesma para todos: A5 e V11 são determinísticos no produto
+  (`validate.sh`) e leitura no repositório alvo. Documenta também as sete
+  garantias que reprovam sozinhas e não estão no §12, e as cinco lacunas
+  conhecidas, incluindo a única cuja conformidade hoje é declarada e não
+  verificada (segredo no repositório alvo, A5)
+
+### Notas de desenho
+- A primeira escrita de `settings.json` também passa pela função de merge, contra
+  `{}`. Escrever `$novo_settings` direto produzia ordem de chave diferente da que
+  o merge produz, e a segunda instalação reescrevia o arquivo só por isso —
+  idempotência quebrada por formatação (D3 → R10). O eval de idempotência pegou
+
+## [0.2.4] — 2026-08-26
+
+### Adicionado
+- **Catraca de tamanho** (`.harness/gate-size.sh`, V10 → R4,R7). O harness já
+  garantia direção de dependência e ausência de ciclo; god file passava limpo.
+  Agora arquivo acima do teto (400 linhas) entra no baseline e **não pode
+  crescer**, e arquivo novo acima do teto reprova. Semântica diferente da
+  catraca de fronteira de propósito: fronteira é presença (diferença de
+  conjunto), tamanho é grandeza — o baseline é `{caminho: linhas}` e a
+  comparação é `>`
+- O gate de tamanho **não tem adaptador**: contagem de linha é o único oráculo
+  estrutural que existe em toda linguagem. Numa stack sem gate de fronteira,
+  onde antes não havia gate estrutural nenhum, agora há um — e o teste de fumaça
+  o prova (V9), em vez de sair 3 sem provar nada
+- `--rename <antigo> <novo>` no gate de tamanho. Sem ele, renomear um arquivo do
+  baseline reprovava um commit legítimo, e a saída natural seria editar o
+  baseline à mão — que é exatamente o que V7 proíbe. O rename move a entrada e
+  nunca aumenta o número
+- **`eslint.config.js` no template** com `max-lines-per-function` em 60,
+  `complexity` em 10 e `max-depth` em 4 (V11 → R4). Isento em arquivo de teste:
+  `describe` com trinta casos é bom teste e passaria dos sessenta
+- `harness:audit` ganhou `scripts/size-status.sh` — mede mediana, p95 e quantos
+  arquivos passam do teto, **sem instalar nada**. O número absoluto sozinho não
+  decide: mediana 90 com dez pontos quentes é um repositório saudável, mediana
+  600 é outra conversa
+- `HARNESS.md` 2.1: regras **V10** (catraca de tamanho) e **V11** (limite de
+  função no linter, limite de arquivo na catraca — nunca os dois no mesmo lugar)
+
+### Corrigido
+- O template não tinha **nenhum** `eslint.config.js`. Com ESLint 9, `pnpm lint`
+  e o passo 1 do hook de turno falhavam por config ausente em todo scaffold
+  novo — e o agente lê "erro de config" como "meu código está errado". A
+  dependência `typescript-eslint` também faltava, sem a qual o parser não lê
+  `.ts`
+- `verify.sh` do template invocava `npx depcruise` direto, ignorando o baseline:
+  o modo B tinha um gate com resposta diferente do modo A. Agora chama
+  `.harness/gate-boundaries.sh`, como o retrofit
+- C5 (`HARNESS.md`) foi renomeada para **"Alvo de tamanho do CLAUDE.md"**. Como
+  "C5 — Alvo de tamanho", era lida como limite de código-fonte, quando sempre
+  tratou do arquivo de contexto
+
+### Interno
+- **Os evals foram divididos por família.** `evals/run.sh` tinha 424 linhas e era
+  o único arquivo do repositório acima do teto que esta versão publica. Virou um
+  corredor de 68 linhas mais `evals/cases/*.sh`, onze arquivos de 22 a 62 linhas,
+  carregados com `source`. Roda um caso só com `./evals/run.sh 70-catraca-tamanho`
+- **Cada caso monta o próprio repositório** (`legado_instalado <nome>`). Havia um
+  `$W/legado` atravessando meia suíte: a ordem dos blocos era carregada e
+  invisível — a fase 3 dependia de a fase 2 ter rodado antes, e mexer num bloco
+  quebrava outro três telas abaixo. Custa ~0,4s por caso e o tempo total não
+  mudou (20s), porque o arquivo único já refazia plano e fase 1 no meio do
+  caminho
+- A função **recusa** nome de fixture já usado. Foi o defeito que a própria
+  divisão produziu na primeira tentativa: `cp -a src dst` com `dst` existente
+  copia para dentro, e dois casos com o mesmo nome mediam uma árvore aninhada
+  com cara de sucesso
+- `validate.sh` passa `bash -n` em todo shell do repositório e exige que cada
+  caso declare numa linha o que testa. Nada checava sintaxe antes — e um
+  `source` com erro de sintaxe aborta o corredor inteiro
+
+### Notas de desenho
+- **Teto absoluto foi descartado para legado.** Reprova centenas de arquivos no
+  primeiro turno, o time desliga o gate, e gate desligado é pior que gate
+  nenhum. O mesmo número age como limite absoluto em projeto novo, onde o
+  baseline nasce vazio
+- **Contagem de arquivos por módulo não virou gate.** Mede ao contrário do que
+  se quer: módulo de dados com 40 repositórios pequenos é saudável, domínio com
+  6 arquivos de 900 linhas é doente, e a contagem premia o segundo. O sinal
+  mecânico honesto nesse nível é a largura da fronteira exportada, não a
+  contagem — e responsabilidade dupla continua sendo julgamento do subagente
+  `architect`
+- **A via de escape é conhecida e está tapada.** Todo gate de tamanho convida a
+  partir o arquivo em `-parte2`. A recusa do gate ensina a saída certa (A4 → R1),
+  e a partição arbitrária quase sempre cria import mútuo ou órfão — que cai em
+  `sem-ciclos` e `sem-orfaos`. O gate de fronteira é a rede do gate de tamanho:
+  é por já existir que o de tamanho é defensável
+
 ## [0.2.3] — 2026-08-26
 
 ### Corrigido

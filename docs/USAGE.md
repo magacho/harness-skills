@@ -18,7 +18,7 @@ esta página.
 |---|---|---|
 | `jq` | os scripts falam JSON | os scripts não rodam |
 | `git` | detecção de modo e contagem de commits | detecção degrada |
-| Node + `npx` | adaptador de fronteira JS/TS | instala sem o gate de fronteira |
+| Node + `npx` | adaptador de fronteira JS/TS | instala sem o gate de fronteira; o de tamanho continua valendo |
 
 Stack que não é JS/TS instala todo o resto e **declara a lacuna em voz alta** —
 ver §9.
@@ -113,7 +113,7 @@ corrigir, antes de qualquer coisa nova.
 }
 ```
 
-`violacoes` é o número que decide se a catraca é obrigatória. O script detecta
+`violacoes` é o número que decide se a catraca de fronteira é obrigatória. O script detecta
 os alvos reais do repositório — `modules`, `packages`, `apps`, `libs`,
 `services` ou `src` — e usa o adaptador pelos quatro verbos, o mesmo mecanismo
 da instalação. Sonda o grafo **sem escrever nada** no repositório auditado.
@@ -192,12 +192,22 @@ gates passam **hoje**, o manifesto completo e as pendências:
     "lint":      { "estado": "verde",    "comando": "npm run lint" },
     "typecheck": { "estado": "vermelho", "comando": "npm run typecheck" }
   },
+  "size": {
+    "ceiling": 400,
+    "acima_do_teto": 7,
+    "maior": { "arquivo": "src/cobranca/cobrar.js", "linhas": 1840 }
+  },
   "pendencias": [
     "A3 → R5: não há script de investigação read-only...",
-    "typecheck reprova hoje (npm run typecheck). Fica FORA do gate de turno..."
+    "typecheck reprova hoje (npm run typecheck). Fica FORA do gate de turno...",
+    "V10 → R4: 7 arquivo(s) já passam de 400 linhas (o maior: ..., 1840)..."
   ]
 }
 ```
+
+`size.acima_do_teto` é medido **antes** de escrever qualquer coisa. Não muda a
+instalação — os sete arquivos entram no baseline e param de crescer de qualquer
+forma. Muda a conversa depois dela.
 
 Repare em `gates_hoje`: o typecheck está vermelho, então **fica fora do gate** e
 vira pendência declarada. Ligar gate que reprova trabalho legítimo é o modo de
@@ -227,7 +237,8 @@ A skill mostra o manifesto e **espera o ok**. Pergunta duas coisas:
     ".claude/hooks/guard-prod.sh", ".claude/hooks/cleanup.sh",
     ".claude/commands/plan.md", ".claude/commands/review.md",
     ".claude/commands/ship.md",
-    ".harness/gate-boundaries.sh", ".harness/adapters/node.sh",
+    ".harness/gate-boundaries.sh", ".harness/gate-size.sh",
+    ".harness/adapters/node.sh",
     ".dependency-cruiser.cjs", ".harness/harness.json",
     ".claude/settings.json"
   ],
@@ -235,7 +246,11 @@ A skill mostra o manifesto e **espera o ok**. Pergunta duas coisas:
 }
 ```
 
-O gate e o adaptador vão **para dentro do repositório**, não ficam no plugin:
+São **dois gates**. O de fronteira depende de adaptador; o de tamanho não depende
+de nada — contagem de linha é o único oráculo estrutural que existe em toda
+linguagem, e por isso ele é o gate que sobra numa stack sem adaptador.
+
+Os gates e o adaptador vão **para dentro do repositório**, não ficam no plugin:
 quem clona recebe o mesmo comportamento sem ter a skill instalada (D1 → R8), e o
 gate roda em CI e sob outro agente.
 
@@ -244,7 +259,28 @@ Produção é negada em **dois lugares** — permissão e hook — porque uma s�
 
 **Aceite:** o gate roda, passa hoje, e reprova violação plantada.
 
-### 5.2 Fase 2 — a catraca
+#### O merge de `settings.json`
+
+O arquivo do projeto **manda**, e o do harness soma. Três regras, cada uma por um
+modo de perda real (`scripts/merge-settings.jq`):
+
+| caminho | regra | por quê |
+|---|---|---|
+| `permissions.allow` / `.deny` | união de conjunto | o que o projeto negou continua negado (A7 → R5) |
+| `hooks.<evento>` | entrada do harness substituída, do projeto preservada | somar duplicaria o hook quando a definição muda de versão |
+| resto | merge recursivo; escalar novo vence | chave que o harness não conhece atravessa intacta |
+
+**Não há fallback.** Se o merge não pode ser feito — `settings.json` inválido, ou
+uma invariante violada —, o arquivo **não é tocado**, entra em `pulados`, e a
+proposta fica em `.harness/settings.proposto.json` para merge à mão. Isso importa
+mais do que parece: settings.json é onde mora a garantia, e um merge que perde
+uma negação em silêncio é pior que uma instalação que não aconteceu.
+
+O gerador confere duas invariantes contra o **resultado**, não contra a intenção:
+nenhuma negação do projeto desapareceu, e nenhum hook fora de `.claude/hooks/`
+desapareceu. Se qualquer uma falhar, recusa.
+
+### 5.2 Fase 2 — as catracas
 
 **É aqui que o valor chega.** Se a instalação for interrompida, que seja depois
 desta fase.
@@ -253,15 +289,25 @@ desta fase.
 
 ```json
 {
-  "baseline": ".harness/baseline.json",
-  "violacoes_congeladas": 2,
-  "catraca": "ligada: o gate falha só no que é novo",
-  "por_regra": { "sem-ciclos": 1, "sem-orfaos": 1 }
+  "fronteira": {
+    "baseline": ".harness/baseline.json",
+    "violacoes_congeladas": 2,
+    "catraca": "ligada: o gate falha só no que é novo",
+    "por_regra": { "sem-ciclos": 1, "sem-orfaos": 1 }
+  },
+  "tamanho": {
+    "baseline": ".harness/baseline-size.json",
+    "teto": 400,
+    "arquivos_congelados": 7,
+    "maior": { "key": "src/cobranca/cobrar.js", "value": 1840 },
+    "catraca": "ligada: os 7 arquivo(s) acima do teto não podem crescer"
+  }
 }
 ```
 
-O baseline é do harness, em formato próprio — não o mecanismo nativo da
-ferramenta (V8):
+São duas catracas com semânticas diferentes de propósito. O baseline de
+fronteira é do harness, em formato próprio — não o mecanismo nativo da
+ferramenta (V8) — e a pergunta é **presença**:
 
 ```json
 [
@@ -270,8 +316,16 @@ ferramenta (V8):
 ]
 ```
 
+O de tamanho guarda **grandeza**: o arquivo pode continuar existindo, o número é
+que não pode subir.
+
+```json
+{ "src/cobranca/cobrar.js": 1840, "src/faturamento/faturar.js": 612 }
+```
+
 Isso converte "40 erros, gate inútil" em "40 erros parados": a decadência para
-antes de qualquer refactor.
+antes de qualquer refactor. E converte "sete god files" em "sete god files que
+não crescem mais" — sem exigir que ninguém os parta hoje.
 
 **O baseline só encolhe.** O gerador recusa regerá-lo maior e diz por quê. Essa
 recusa é a regra funcionando — não um obstáculo a contornar com `--force`.
@@ -328,11 +382,14 @@ de partida de projeto novo, não gabarito de projeto existente.
     ./scripts/smoke-test.sh <repo>
 
 ```
-V9 OK — o gate reprovou a violação plantada e voltou a passar depois de removida.
+V9 OK (tamanho) — reprovou arquivo de 401 linhas com teto 400, e voltou a passar.
+V9 OK (fronteira) — reprovou o ciclo plantado e voltou a passar depois de removido.
+2 de 2 gate(s) estrutural(is) provado(s).
 ```
 
-Planta violação, confirma que o gate reprova, remove. **Gate que nunca reprovou
-não é gate.** Se falhar, a instalação **não** está concluída.
+Planta uma violação por gate, confirma que cada um reprova, remove. **Gate que
+nunca reprovou não é gate.** Reporta por gate, e só sai 3 quando nenhum dos dois
+pôde ser provado. Se falhar, a instalação **não** está concluída.
 
 A skill encerra dizendo o que **não** instalou: a fase 4 do `PLAN.md` — roster
 onda 1, revisor de mudança e arquiteto — ainda é trabalho manual.

@@ -33,6 +33,8 @@ Se `merece_harness.veredito` for `false`: diga por quê e **pare aqui**.
 | Arquivos escritos | `gen-config.sh` → `.escritos` |
 | Arquivos pulados e o motivo de cada um | `.pulados` |
 | Quais gates ficaram ligados e quais ficaram de fora | `.harness/harness.json` → `.gates` |
+| Quantos arquivos já passam do teto de tamanho | `plan-install.sh` → `.size.acima_do_teto` |
+| Se `.claude/settings.json` foi pulado: **as permissões não entraram** | `.pulados`, e `.harness/settings.proposto.json` |
 | Teto e dono registrados | `.harness/harness.json` |
 
 **Decisão pedida:** seguir para a catraca.
@@ -46,8 +48,10 @@ Se `merece_harness.veredito` for `false`: diga por quê e **pare aqui**.
 
 | exibir | de onde |
 |---|---|
-| Quantas violações foram congeladas, por regra | `gen-baseline.sh` → `.por_regra` |
-| Estado da catraca | `.catraca` |
+| Quantas violações de fronteira foram congeladas, por regra | `gen-baseline.sh` → `.fronteira.por_regra` |
+| Estado da catraca de fronteira | `.fronteira.catraca` |
+| Quantos arquivos de tamanho foram congelados, e o maior | `.tamanho.arquivos_congelados`, `.tamanho.maior` |
+| Estado da catraca de tamanho | `.tamanho.catraca` |
 | Se não houve adaptador: a lacuna, em uma frase | saída de erro, código 3 |
 
 **Decisão pedida:** seguir para o contexto.
@@ -55,6 +59,10 @@ Se `merece_harness.veredito` for `false`: diga por quê e **pare aqui**.
 Um baseline grande não é motivo para adiar: é o argumento a favor da catraca. Um
 baseline vazio também não é motivo para pular: em repositório limpo, qualquer
 violação passa a ser nova a partir de agora.
+
+Se o código 3 apareceu, diga a frase inteira: faltou a catraca de **fronteira**,
+e a de **tamanho** está ligada. "Sem catraca" seria falso, e é o tipo de resumo
+que faz alguém achar que a fase 2 não entregou nada.
 
 ---
 

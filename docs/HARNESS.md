@@ -8,7 +8,7 @@ lá.** Regra sem R correspondente é cerimônia e foi removida — ver §12.
 
 A implantação é o `PLAN.md`. Este documento não descreve como instalar.
 
-Versão 2.0 · Escopo: harness distribuível, adotável por qualquer projeto
+Versão 2.1 · Escopo: harness distribuível, adotável por qualquer projeto
 
 ---
 
@@ -73,7 +73,7 @@ mora dentro do hook.
 | Especificação | etapa da thread principal | antes da tarefa | atenção humana | entender a demanda |
 | Contexto | `CLAUDE.md` hierárquico | sempre carregado | zero | intenção e convenção |
 | Formatação | hook por edição | por edição | ~200ms | consistência |
-| Verificação | hook de fim de turno | por turno | segundos | lint, tipo, fronteira |
+| Verificação | hook de fim de turno | por turno | segundos | lint, tipo, fronteira, tamanho |
 | Permissão | config de permissões | por tool call | zero | o que não pode acontecer |
 | Julgamento | subagentes | pré-PR / semanal | caro | o que a máquina não vê |
 | Rede final | CI | por push | minutos | impedir o merge |
@@ -101,7 +101,8 @@ Se o `CLAUDE.md` cita um comando que não existe, é instrução falsa — pior 
 instrução ausente, porque o agente confia. **Conformidade exige executar as
 afirmações, não lê-las.**
 
-**C5 — Alvo de tamanho.** `→ R1, R9`
+**C5 — Alvo de tamanho do CLAUDE.md.** `→ R1, R9`
+Trata do arquivo de contexto, **não do código-fonte** — tamanho de código é V10.
 Raiz até ~60 linhas; módulo até ~15. Acima disso, provavelmente virou
 documentação (P1) e passa a ser ignorada.
 
@@ -182,6 +183,33 @@ em outras.
 **V9 — Conformidade exige gate reprovado de propósito.** `→ R3`
 Plante uma violação e confirme que o gate falha. Gate que nunca reprovou não é
 gate.
+
+**V10 — Tamanho de arquivo é catraca, nunca limite absoluto em legado.** `→ R4, R7`
+Arquivo acima do teto entra no baseline e **não pode crescer**; arquivo novo
+acima do teto reprova. A semântica é de grandeza, não de presença: o baseline é
+`{caminho: linhas}` e a comparação é `>`, ao contrário da fronteira, que é
+diferença de conjunto. O oráculo é contagem de linha — o único estrutural que
+existe em toda linguagem, e por isso a catraca de tamanho vale onde não há
+adaptador de fronteira (`→ R12`).
+
+*Por que catraca e não teto:* limite absoluto sobre legado reprova centenas de
+arquivos no primeiro turno, o time desliga o gate, e gate desligado é pior que
+gate nenhum. Em projeto novo o baseline nasce vazio e o mesmo número age como
+limite absoluto — um mecanismo, dois regimes.
+
+**V11 — O gate de tamanho mede função onde há parser, e arquivo onde não há.**
+`→ R4, R9`
+Limite de arquivo é a catraca do harness; limite de função e de ramificação são
+do linter, que sabe onde uma função começa. Duas perguntas, dois donos, uma
+resposta cada. Nunca as duas no mesmo lugar: um `max-lines` no linter daria uma
+segunda resposta à pergunta que a catraca já responde, e as duas divergiriam na
+primeira vez que só uma fosse corrigida.
+
+*Modo de fracasso a antecipar:* qualquer limite de tamanho convida a partir o
+arquivo em `-parte2` para satisfazer o número. A recusa do gate tem de dizer isso
+(A4 → R1), e o gate de ciclo é a rede que pega a partição arbitrária — que
+quase sempre produz import mútuo ou órfão. Sem V7 e sem o gate de fronteira, um
+gate de tamanho isolado piora o código que deveria proteger.
 
 ---
 
@@ -357,6 +385,8 @@ Verificável, não declarável. Cada item cita o R que serve.
 - [ ] Guarda anti-loop presente; contador zera ao passar `V5 → R2`
 - [ ] **Violação plantada de propósito reprova** `V9 → R3`
 - [ ] Baseline de catraca existe se havia violações; e encolhe `V7 → R7`
+- [ ] Catraca de tamanho ativa: arquivo acima do teto não cresce `V10 → R4,R7`
+- [ ] Limite de função no linter, limite de arquivo na catraca — nunca os dois no mesmo lugar `V11 → R4`
 - [ ] Todo gate roda como comando à mão `D5 → R12`
 - [ ] Escrita em produção negada em permissão **e** em hook `A2 → R5`
 - [ ] Script de investigação existe e é read-only `A3 → R5`
@@ -384,6 +414,9 @@ não rastrearem a nenhum R:
 
 ## Histórico
 
+- **2.1** — acrescentadas V10 (catraca de tamanho) e V11 (divisão função/arquivo
+  entre linter e catraca), ambas rastreando a R4. C5 renomeada para deixar
+  explícito que trata do `CLAUDE.md` e não do código-fonte.
 - **2.0** — derivada de `INTENT.md` v1.1. Toda regra rastreia a um R. Adicionadas
   as famílias E (especificação, R11) e D (distribuição, R8/R10/R12); regras de
   autonomia A6–A9; roster de papéis; parametrização. Rebaixadas para apêndice as

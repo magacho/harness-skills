@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
-# Fase 2 — a catraca. Congela as violações que já existem e liga o gate em
-# "falha só no que é novo" (V7 → R7).
+# Fase 2 — a catraca. Congela o que já existe e liga os gates em "falha só no
+# que é novo" (V7 → R7). São duas catracas, com semânticas diferentes:
+#
+#   fronteira — presença: a violação existe ou não existe (diferença de conjunto)
+#   tamanho   — grandeza: o número não pode subir (comparação por arquivo)
+#
+# A de tamanho não depende de adaptador e roda em qualquer stack; a de fronteira
+# existe onde há adaptador. Por isso a de tamanho vem PRIMEIRO: numa stack sem
+# adaptador, a fase 2 ainda entrega catraca, e o exit 3 significa "faltou a de
+# fronteira", nunca "não há catraca".
 #
 # É onde o valor chega: transforma "40 erros, gate inútil" em "40 erros
 # parados". A decadência para antes de qualquer refactor.
@@ -25,11 +33,29 @@ root="$(cd "${repo:?uso: gen-baseline.sh <repo>}" && pwd)"
 cfg="$root/.harness/harness.json"
 [[ -f "$cfg" ]] || { echo "gen-baseline: fase 1 ainda não rodou ($cfg ausente)." >&2; exit 1; }
 
+# --- catraca de tamanho: sempre, e antes ------------------------------------
+size_rep='null'
+gate_size="$root/.harness/gate-size.sh"
+if [[ -x "$gate_size" ]] && jq -e '.size.ceiling' "$cfg" >/dev/null 2>&1; then
+  args=(--init); [[ $force -eq 1 ]] && args+=(--force)
+  if out=$("$gate_size" "${args[@]}" 2>&1); then
+    size_rep="$out"
+  else
+    # A recusa do --init é a regra V7 funcionando. Não engolir, não contornar.
+    echo "$out" >&2
+    exit 1
+  fi
+else
+  echo "sem catraca de tamanho: .harness/gate-size.sh ou .size ausente." >&2
+fi
+
 adapter=$(jq -r '.boundary.adapter // empty' "$cfg")
 if [[ -z "$adapter" ]]; then
   # D4 → R10: a lacuna é dita em voz alta, e não aborta o resto da instalação.
-  echo "SEM CATRACA: $(jq -r '.boundary.reason // "esta stack não tem adaptador de fronteira"' "$cfg")" >&2
-  echo "O harness fica instalado e ativo; o gate de fronteira, não." >&2
+  echo "SEM CATRACA DE FRONTEIRA: $(jq -r '.boundary.reason // "esta stack não tem adaptador de fronteira"' "$cfg")" >&2
+  echo "O harness fica instalado e ativo; o gate de fronteira, não. A catraca de" >&2
+  echo "TAMANHO não depende de adaptador e está ligada — veja o relatório." >&2
+  jq -n --argjson sz "$size_rep" '{fronteira: null, tamanho: $sz}'
   exit 3
 fi
 
@@ -63,8 +89,11 @@ fi
 printf '%s\n' "$novo" > "$baseline"
 n=$(jq 'length' <<<"$novo")
 
-jq -n --argjson n "$n" --argjson v "$novo" --arg p ".harness/baseline.json" '
-  { baseline: $p, violacoes_congeladas: $n,
-    catraca: (if $n > 0 then "ligada: o gate falha só no que é novo"
-              else "ligada: repositório limpo, qualquer violação é nova" end),
-    por_regra: ($v | group_by(.regra) | map({(.[0].regra): length}) | add // {}) }'
+jq -n --argjson n "$n" --argjson v "$novo" --arg p ".harness/baseline.json" \
+      --argjson sz "$size_rep" '
+  { fronteira:
+      { baseline: $p, violacoes_congeladas: $n,
+        catraca: (if $n > 0 then "ligada: o gate falha só no que é novo"
+                  else "ligada: repositório limpo, qualquer violação é nova" end),
+        por_regra: ($v | group_by(.regra) | map({(.[0].regra): length}) | add // {}) },
+    tamanho: $sz }'

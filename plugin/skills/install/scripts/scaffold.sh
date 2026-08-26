@@ -9,7 +9,7 @@
 # a fronteira de HARNESS.md §1: instalar harness não toca código-fonte.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.3"
+VERSION="0.2.5"
 tpl="$here/../assets/template"
 
 repo=""; owner=""; ceiling="supervisionado"; mapa=""
@@ -91,6 +91,7 @@ fi
 # config — senão o repositório teria dois gates com respostas diferentes.
 mkdir -p "$root/.harness/adapters"
 for pair in "$here/../assets/gate/boundaries.sh:.harness/gate-boundaries.sh" \
+            "$here/../assets/gate/size.sh:.harness/gate-size.sh" \
             "$here/adapters/node.sh:.harness/adapters/node.sh" \
             "$here/../assets/retrofit/hooks/verify.sh:.claude/hooks/verify.sh"; do
   src="${pair%%:*}"; dst="${pair#*:}"
@@ -98,13 +99,21 @@ for pair in "$here/../assets/gate/boundaries.sh:.harness/gate-boundaries.sh" \
   chmod +x "$root/$dst"
 done
 echo '[]' > "$root/.harness/baseline.json"
+echo '{}' > "$root/.harness/baseline-size.json"
 
 bcfg=".dependency-cruiser.js"
+# Em projeto novo o baseline nasce vazio, e aí o teto de tamanho age como
+# limite absoluto — que é o que se pode exigir de greenfield sem custo nenhum.
+# Em legado o mesmo número vira catraca. Um só mecanismo, dois regimes.
 jq -n --arg v "$VERSION" --arg o "$owner" --arg c "$ceiling" --arg bc "$bcfg" '
   { harness_version: $v, owner: $o, autonomy_ceiling: $c, anti_loop_tries: 3,
     formatter: "npx --no-install prettier --write",
     boundary: { adapter: "node", config: $bc, targets: ["modules"] },
-    gates: { boundaries: true, lint: "pnpm lint", typecheck: "pnpm typecheck" } }' \
+    size: { ceiling: 400, targets: ["modules"],
+            extensions: ["ts","tsx","mts","cts","js","jsx","mjs","cjs"],
+            exclude: ["*.d.ts","*.generated.*","*.min.js","*.snap"] },
+    gates: { boundaries: true, size: true,
+             lint: "pnpm lint", typecheck: "pnpm typecheck" } }' \
   > "$root/.harness/harness.json"
 
 # A6/A8 → R5: teto sustentado por permissão. O template já traz o allow/deny da
@@ -113,11 +122,16 @@ if [[ -f "$root/.claude/settings.json" ]]; then
   extra='[]'
   [[ "$ceiling" == assistido ]] && extra='["Bash(git commit*)","Bash(git push*)"]'
   jq --argjson x "$extra" '
-    .permissions.allow = ((.permissions.allow // []) + ["Bash(./.harness/gate-boundaries.sh:*)"] | unique)
+    .permissions.allow = ((.permissions.allow // [])
+      + ["Bash(./.harness/gate-boundaries.sh:*)","Bash(./.harness/gate-size.sh:*)"] | unique)
     | .permissions.deny = ((.permissions.deny // []) + $x | unique)
     | ._harness = {generated: "'"$VERSION"'"}' \
     "$root/.claude/settings.json" > "$root/.claude/settings.json.tmp" \
-    && mv "$root/.claude/settings.json.tmp" "$root/.claude/settings.json"
+    && mv "$root/.claude/settings.json.tmp" "$root/.claude/settings.json" \
+    || { rm -f "$root/.claude/settings.json.tmp"
+         echo "AVISO: não foi possível acrescentar as permissões do gate a" >&2
+         echo ".claude/settings.json. O arquivo do template ficou como estava —" >&2
+         echo "confira permissions.allow à mão antes de usar (A8 → R5)." >&2; }
 fi
 
 jq -n --argjson c "$(printf '%s\n' "${copiados[@]+"${copiados[@]}"}" | jq -R . | jq -s 'map(select(length>0))')" \

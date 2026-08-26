@@ -68,9 +68,22 @@ else
 fi
 
 if [[ -f "$repo/.harness/baseline.json" ]]; then
-  row "catraca" "$(jq 'length' "$repo/.harness/baseline.json" 2>/dev/null || echo '?') violação(ões) congelada(s)"
+  row "catraca fronteira" "$(jq 'length' "$repo/.harness/baseline.json" 2>/dev/null || echo '?') violação(ões) congelada(s)"
 else
-  row "catraca" "sem baseline — a fase 2 não rodou"
+  row "catraca fronteira" "sem baseline — a fase 2 não rodou"
+fi
+
+teto=$(jqr '.size.ceiling // ""' "$hj")
+if [[ -n "$teto" && "$teto" != "null" ]]; then
+  gate="ausente"; [[ -x "$repo/.harness/gate-size.sh" ]] && gate="presente"
+  row "gate de tamanho" "$gate (teto $teto linhas)"
+  if [[ -f "$repo/.harness/baseline-size.json" ]]; then
+    row "catraca tamanho" "$(jq 'length' "$repo/.harness/baseline-size.json" 2>/dev/null || echo '?') arquivo(s) congelado(s)"
+  else
+    row "catraca tamanho" "sem baseline — a fase 2 não rodou"
+  fi
+else
+  row "gate de tamanho" "não configurado"
 fi
 
 if [[ "$rv" != "$exec_v" && "$exec_v" != "desconhecida" && "$rv" != "desconhecida" ]]; then

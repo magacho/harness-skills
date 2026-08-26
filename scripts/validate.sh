@@ -26,6 +26,18 @@ echo "→ scripts executáveis"
 while IFS= read -r f; do [[ -x "$f" ]] || err "$f sem bit de execução"; done \
   < <(find plugin scripts evals -name '*.sh' -not -name 'env.*.sh' 2>/dev/null)
 
+echo "→ todo shell do repositório passa em bash -n"
+while IFS= read -r f; do
+  bash -n "$f" 2>/dev/null || err "$f não é bash válido"
+done < <(find plugin scripts evals -name '*.sh' 2>/dev/null)
+
+echo "→ os evals são divididos por família, e o corredor os carrega"
+[[ -d evals/cases ]] || err "evals/cases ausente: a suíte voltou a ser um arquivo só"
+grep -q 'evals/cases/\*.sh' evals/run.sh || err "run.sh não carrega os casos"
+while IFS= read -r c; do
+  head -3 "$c" | grep -q '^# Caso:' || err "$c não declara em uma linha o que testa"
+done < <(find evals/cases -name '*.sh' 2>/dev/null)
+
 echo "→ frontmatter dos comandos"
 for c in plugin/commands/*.md; do
   [[ -e "$c" ]] || continue
@@ -76,11 +88,69 @@ echo "→ o template é distribuído por uma skill, não solto na raiz"
 [[ -d plugin/skills/install/assets/template ]] || err "template ausente de plugin/skills/install/assets/"
 [[ ! -d template ]] || err "template solto na raiz: nenhuma skill o distribui de lá"
 
+echo "→ eslint.config.js do template é carregável (C4 aplicada ao que enviamos)"
+# Config que não carrega faz o gate de turno falhar por erro de config, e o
+# agente lê isso como "meu código está errado". Sem typescript-eslint instalado
+# aqui, o que se pode verificar é a sintaxe do arquivo.
+node --check plugin/skills/install/assets/template/eslint.config.js 2>/dev/null \
+  || err "eslint.config.js do template não é JavaScript válido"
+
 echo "→ contrato de adaptador implementado, não só escrito"
 for v in detect generate-config run normalize; do
   grep -qE "^${v}\)" plugin/skills/install/scripts/adapters/node.sh \
     || err "adaptador node.sh não implementa o verbo $v"
 done
+
+echo "→ catraca de tamanho: gate, config e o modo de fracasso conhecido (V10/V11)"
+[[ -x plugin/skills/install/assets/gate/size.sh ]] || err "gate de tamanho ausente"
+grep -q 'baseline-size.json' plugin/skills/install/assets/gate/size.sh \
+  || err "o gate de tamanho não tem baseline próprio (V10)"
+grep -q -- '--tighten' plugin/skills/install/assets/gate/size.sh \
+  || err "o baseline de tamanho não tem caminho para encolher (V7)"
+# V11: o limite de arquivo é da catraca. Um max-lines no linter daria uma segunda
+# resposta à mesma pergunta, e as duas divergiriam na primeira correção.
+grep -qE '^\s*"?max-lines"?:' plugin/skills/install/assets/template/eslint.config.js \
+  && err "max-lines no linter duplica a catraca de tamanho (V11)"
+grep -q 'max-lines-per-function' plugin/skills/install/assets/template/eslint.config.js \
+  || err "o linter do template não limita tamanho de função (V11)"
+grep -q 'typescript-eslint' plugin/skills/install/assets/template/package.json \
+  || err "eslint.config.js usa typescript-eslint sem declarar a dependência (C4)"
+# A recusa tem de ensinar: sem isto o agente parte o arquivo em -parte2 e passa.
+grep -q 'parte 1 / parte 2' plugin/skills/install/assets/gate/size.sh \
+  || err "a recusa do gate de tamanho não ensina a saída certa (A4 → R1)"
+# V9 nos dois gates: fumaça que só prova um deixa o outro sem prova nenhuma.
+for g in gate-size gate-boundaries; do
+  grep -q "$g" plugin/skills/install/scripts/smoke-test.sh \
+    || err "smoke-test.sh não prova o $g (V9 → R3)"
+done
+
+echo "→ os dois gates entram no hook de turno e nas permissões"
+grep -q 'gate-size.sh' plugin/skills/install/assets/retrofit/hooks/verify.sh \
+  || err "o hook de turno não chama o gate de tamanho"
+grep -q 'gate-size.sh' plugin/skills/install/scripts/gen-config.sh \
+  || err "gen-config.sh não instala o gate de tamanho"
+grep -q 'gate-size.sh' plugin/skills/install/scripts/scaffold.sh \
+  || err "scaffold.sh não instala o gate de tamanho"
+
+echo "→ merge de settings.json: sem fallback silencioso, com invariante travada"
+MS=plugin/skills/install/scripts/merge-settings.jq
+[[ -f $MS ]] || err "merge-settings.jq ausente: o merge voltou para dentro do gerador"
+grep -q "merge-settings.jq" plugin/skills/install/scripts/gen-config.sh \
+  || err "gen-config.sh não usa a função de merge testada"
+# O defeito original: `.[0]` indexado DEPOIS de `.[0] * .[1]`, onde o contexto já
+# é o objeto mesclado. Erro de tipo em toda execução, escondido por um `||`.
+grep -qE '\.\[0\] \* \.\[1\].*\|' plugin/skills/install/scripts/gen-config.sh \
+  && err "gen-config.sh voltou a indexar .[0] depois do merge (erro de tipo)"
+# E o que transformou o erro em perda de dados: fallback que engole a falha do
+# merge e ainda escreve.
+grep -qE '^\s*\|\| jq ' plugin/skills/install/scripts/gen-config.sh \
+  && err "gen-config.sh tem fallback de jq que esconde falha de merge"
+for inv in 'perdeu_deny' 'perdeu_hook'; do
+  grep -q "$inv" plugin/skills/install/scripts/gen-config.sh \
+    || err "gen-config.sh não verifica a invariante $inv depois do merge"
+done
+grep -q 'PERMISSÕES NÃO INSTALADAS' plugin/skills/install/scripts/gen-config.sh \
+  || err "merge recusado não diz em voz alta que as permissões não entraram (A8)"
 
 echo "→ a catraca é do harness, não da ferramenta (V8)"
 grep -q 'baseline.json' plugin/skills/install/assets/gate/boundaries.sh \

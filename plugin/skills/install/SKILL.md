@@ -61,14 +61,25 @@ uma**. Ver `./reference/checkpoints.md` para o que exibir em cada parada.
     [--ceiling supervisionado] --fase 1
 ```
 
-Instala os quatro hooks, as permissões, os comandos, o gate de fronteira e o
-adaptador **dentro do repositório** (`.harness/`), não no plugin: quem clona
-recebe o mesmo comportamento sem ter a skill instalada (D1 → R8).
+Instala os quatro hooks, as permissões, os comandos, os **dois gates** — fronteira
+e tamanho — e o adaptador **dentro do repositório** (`.harness/`), não no plugin:
+quem clona recebe o mesmo comportamento sem ter a skill instalada (D1 → R8).
+
+O gate de tamanho não tem adaptador e não depende de ferramenta: vale em qualquer
+stack, inclusive nas que não têm gate de fronteira (V10 → R12). Relate quantos
+arquivos já passam do teto — está em `size.acima_do_teto` no plano. Esse número
+não muda a instalação; muda a conversa depois dela.
 
 Três coisas para conferir na saída e relatar:
 
 - **`pulados`** — arquivo editado à mão nunca é sobrescrito (D3 → R10). Diga
   quais foram e por quê; não insista.
+- **`.claude/settings.json` em `pulados` é caso especial e grave.** O merge só
+  recusa quando não pode ser feito sem perder o que o projeto escreveu — e a
+  consequência é que **as permissões não foram instaladas**, ou seja, não há
+  dupla trava de produção (A2/A8 → R5). Não trate como rodapé: leia o motivo,
+  abra `.harness/settings.proposto.json` ao lado do arquivo atual e faça o merge
+  com a pessoa, entrada por entrada, antes de seguir.
 - **Gates ligados** — só entra o que já passava hoje. Lint ou typecheck vermelho
   fica **fora** do gate e vira pendência declarada. Ligar gate que reprova
   trabalho legítimo é o modo de fracasso nº 1: o time desliga em duas semanas, e
@@ -84,8 +95,10 @@ Aceite da fase: o gate roda, passa hoje, e reprova violação plantada.
 ./scripts/gen-baseline.sh <repo>
 ```
 
-Congela as violações que já existem e liga o gate em "falha só no que é novo"
-(V7 → R7).
+Congela o que já existe e liga os gates em "falha só no que é novo" (V7 → R7).
+São **duas catracas**, com semânticas diferentes de propósito: fronteira é
+presença (a violação existe ou não), tamanho é grandeza (o número não pode
+subir). A de tamanho roda primeiro, porque não depende de adaptador.
 
 **É onde o valor chega.** Transforma "40 erros, gate inútil" em "40 erros
 parados": a decadência para antes de qualquer refactor. Não pule, não inverta a
@@ -95,8 +108,9 @@ O baseline **só encolhe**. O script recusa regerar se o total cresceria — e e
 recusa é a regra funcionando, não um obstáculo a contornar com `--force`.
 
 Se a stack não tem adaptador, o script sai com código 3 e diz o que falta.
-**Não aborte a instalação:** o resto está instalado e ativo, e a lacuna é dita em
-voz alta (D4 → R10).
+**Não aborte a instalação:** o resto está instalado e ativo — inclusive a catraca
+de tamanho — e a lacuna é dita em voz alta (D4 → R10). Nesse caso, exit 3
+significa "faltou a catraca de fronteira", nunca "não há catraca".
 
 ### Fase 3 — contexto
 
@@ -126,9 +140,11 @@ grafo real (C6, P7 → R7).
 ./scripts/smoke-test.sh <repo>
 ```
 
-V9 → R3: planta uma violação, confirma que o gate reprova, remove. **Gate que
-nunca reprovou não é gate.** Se o teste falhar, não reporte a instalação como
-concluída — investigue primeiro.
+V9 → R3: planta uma violação por gate, confirma que cada um reprova, remove.
+**Gate que nunca reprovou não é gate.** Prova um ciclo de import contra o gate de
+fronteira e um arquivo de `teto + 1` linhas contra o de tamanho; reporta por gate,
+e só sai 3 quando nenhum dos dois pôde ser provado. Se o teste falhar, não
+reporte a instalação como concluída — investigue primeiro.
 
 A fase 4 do `PLAN.md` (roster onda 1: revisor de mudança e arquiteto) **não é
 instalada por esta skill**. Diga isso ao entregar, em vez de deixar como omissão.
@@ -154,11 +170,16 @@ Depois, nesta ordem:
 
 1. **Instale as dependências do projeto.** Sem elas o gate de fronteira cruza
    zero módulo e reporta verde sem ter verificado nada — o adaptador detecta e
-   recusa, mas o certo é instalar antes.
+   recusa, mas o certo é instalar antes. O `eslint.config.js` do template precisa
+   de `typescript-eslint`: sem ele o lint do gate de turno falha por config
+   ausente, não por código ruim.
 2. `./scripts/gen-baseline.sh <repo>` — baseline vazio, catraca ligada. Em
    projeto novo qualquer violação é nova, e é assim que deve ser.
 3. `./scripts/smoke-test.sh <repo>` — obrigatório.
-4. **Substitua o exemplo de `invoice` pelo primeiro caso de uso real.** O exemplo
+4. Em projeto novo o baseline de tamanho nasce vazio, e aí o teto age como
+   **limite absoluto** — que é o que se pode exigir de greenfield sem custo. Diga
+   os três números ao entregar: arquivo 400 linhas, função 60, complexidade 10.
+5. **Substitua o exemplo de `invoice` pelo primeiro caso de uso real.** O exemplo
    do scaffold é o que o agente vai imitar; trocá-lo cedo importa mais do que
    parece.
 
