@@ -3,7 +3,7 @@
   "owner": { "name": "magacho" },
   "metadata": {
     "description": "Harness de desenvolvimento agêntico: audita e instala contexto, verificação e fronteiras de módulo verificáveis por máquina.",
-    "version": "0.2.1"
+    "version": "0.2.2"
   },
   "plugins": [
     {

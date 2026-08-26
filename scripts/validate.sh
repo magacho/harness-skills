@@ -26,12 +26,31 @@ echo "→ scripts executáveis"
 while IFS= read -r f; do [[ -x "$f" ]] || err "$f sem bit de execução"; done \
   < <(find plugin scripts evals -name '*.sh' -not -name 'env.*.sh' 2>/dev/null)
 
+echo "→ frontmatter dos comandos"
+for c in plugin/commands/*.md; do
+  [[ -e "$c" ]] || continue
+  head -1 "$c" | grep -q '^---$' || err "$c sem frontmatter"
+  grep -qE '^description:.{40,}' "$c" || err "$c com description ausente ou curta demais"
+done
+
+# Substituição de processo, nunca pipe: pipe põe o laço em subshell, err define
+# fail=1 lá dentro e o valor se perde — o validador imprimia a falha e ainda
+# assim dizia "pronto para release".
+echo "→ caminhos citados nos comandos existem (C4 aplicada ao próprio produto)"
+for c in plugin/commands/*.md; do
+  [[ -e "$c" ]] || continue
+  while read -r p; do
+    rel="${p#\$\{CLAUDE_PLUGIN_ROOT\}/}"
+    [[ -e "plugin/$rel" ]] || err "$c cita $p que não existe"
+  done < <(grep -oE '\$\{CLAUDE_PLUGIN_ROOT\}/[a-zA-Z0-9._/-]+' "$c" | sort -u)
+done
+
 echo "→ caminhos citados nas skills existem"
 for s in plugin/skills/*/SKILL.md; do
   d=$(dirname "$s")
-  grep -oE '\./(scripts|reference|assets)/[a-zA-Z0-9._/-]+' "$s" | sort -u | while read -r p; do
+  while read -r p; do
     [[ -e "$d/${p#./}" ]] || err "$s cita $p que não existe"
-  done
+  done < <(grep -oE '\./(scripts|reference|assets)/[a-zA-Z0-9._/-]+' "$s" | sort -u)
 done
 
 echo "→ sem segredo versionado"

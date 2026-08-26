@@ -10,6 +10,9 @@ código-fonte.
 | `harness:audit` | diagnostica o repositório e produz três listas: remover, corrigir, adicionar | **não** — read-only |
 | `harness:install` | instala hooks, permissões, catraca de violações e `CLAUDE.md` por módulo | sim, sempre com confirmação |
 
+E um comando: **`/harness:version`** — que versão da skill está rodando, que
+versão instalou o harness deste repositório, e se as duas divergiram.
+
 O guia de uso, com a saída real de cada passo, está em
 [`docs/USAGE.md`](docs/USAGE.md).
 
@@ -74,7 +77,7 @@ qualquer refactor.
 
 ## Status
 
-`0.2.1` — diagnostica e instala.
+`0.2.2` — diagnostica e instala.
 
 | | disponível |
 |---|---|
@@ -103,6 +106,7 @@ possível.
 
 ## O que tem aqui
 
+    plugin/commands/        /harness:version
     plugin/skills/audit/    diagnostica: read-only, produz o relatório
     plugin/skills/install/  instala: dois modos, um mecanismo
       assets/template/      scaffold de projeto novo

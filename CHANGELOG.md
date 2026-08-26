@@ -3,6 +3,36 @@
 Skill que modifica repositório alheio sem changelog é impossível de adotar com
 confiança.
 
+## [0.2.2] — 2026-08-26
+
+### Adicionado
+- Comando **`/harness:version`** — mostra a versão da skill em execução, a
+  versão que instalou o harness do repositório atual, o dono, o teto de
+  autonomia e o estado da catraca. As duas versões divergem com o tempo, e a
+  divergência é a informação acionável: arquivo gerado carrega marca de versão
+  justamente para que a próxima instalação saiba o que é dela (`D3 → R10`).
+  Quando o marketplace é um diretório local e a fonte está à frente do que roda,
+  o comando diz que o cache está velho
+- Primeiro comando do plugin. `plugin/commands/` e `plugin/scripts/` passam a
+  existir ao lado de `plugin/skills/`
+- 9 evals do comando (111 → 120)
+
+### Corrigido
+- `scripts/validate.sh` **imprimia a falha e mesmo assim dizia "pronto para
+  release"**. Os dois laços que conferem caminhos citados rodavam dentro de
+  pipe, e pipe cria subshell: o `fail=1` do `err` morria lá dentro. Valia para o
+  check de caminhos das skills desde o 0.1.0 — nunca conseguiu reprovar nada.
+  Trocado por substituição de processo. É o mesmo defeito que o resto deste
+  release corrigiu nos scripts de auditoria, desta vez no validador do produto
+- `validate.sh` agora também confere frontmatter e caminhos citados nos
+  comandos, a mesma regra C4 aplicada ao próprio produto
+
+### Nota
+Os evals do comando usam `grep` sem `-q` de propósito: `-q` fecha o pipe ao
+primeiro casamento e, com `pipefail` ligado, o produtor morre de SIGPIPE e o
+pipeline sai 141 mesmo tendo casado. Os demais `grep -q` da suíte passam porque
+o produtor termina antes; é fragilidade latente, não defeito ativo.
+
 ## [0.2.1] — 2026-08-26
 
 Release de correção. Dois grupos de defeito com a mesma raiz: **um gate ou um
