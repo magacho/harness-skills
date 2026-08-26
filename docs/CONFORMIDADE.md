@@ -8,7 +8,7 @@ Não cria regra. Se divergir de `HARNESS.md`, o `HARNESS.md` manda. Se divergir 
 código, o código manda e esta página está velha — reverifique com
 `./scripts/validate.sh` e `./evals/run.sh` (§7).
 
-Alinhado a `HARNESS.md` v2.1 · scripts do produto v0.2.7
+Alinhado a `HARNESS.md` v2.1 · scripts do produto v0.2.8 · esta página v1.1
 
 ---
 
@@ -64,7 +64,7 @@ não lê a config de lint do projeto. O critério é o mesmo; a confiança, não
 | 9 | Catraca de tamanho ativa: arquivo acima do teto não cresce `V10 → R4,R7` | `gate-size.sh` conta linha física com `awk 'END{print NR+0}'` (não `wc -l`: arquivo sem newline final ficaria devendo uma linha), baseline `{caminho: linhas}`, comparação `>` por arquivo. Teto 400. Sem ferramenta externa — vale em qualquer stack, inclusive nas que não têm adaptador de fronteira | **D** | `15-audit-dimensao`, `70-catraca-tamanho`; `validate.sh` exige baseline próprio, `--tighten` e recusa que ensina |
 | 10 | Limite de função no linter, de arquivo na catraca — nunca os dois no mesmo lugar `V11 → R4` | `eslint.config.js` traz `max-lines-per-function: 60`, `complexity: 10`, `max-depth: 4`, e **ausência deliberada** de `max-lines`; testes têm as duas primeiras desligadas. No repositório alvo, nada lê a config de lint do projeto | **IA** no alvo, **D** no produto | `validate.sh`: reprova `max-lines` no template e exige `max-lines-per-function` |
 | 11 | Todo gate roda como comando à mão `D5 → R12` | por construção: `gate-boundaries.sh` e `gate-size.sh` têm CLI própria (`--scope`, `--json`, `--tighten`, `--init`, `--rename`) e o hook apenas os invoca (P8). Indiretamente coberto pelo item 1: o `CLAUDE.md` gerado cita `./.harness/gate-*.sh`, e `check-claims.sh` exige que o caminho exista e seja executável | **D** (indireto) | `60`, `70`, `95` invocam os gates fora de qualquer hook |
-| 12 | Escrita em produção negada em permissão **e** em hook `A2 → R5` | `permissions.deny` com 12 padrões (`*deploy*prd*`, `aws * --profile prd*`, `psql *prd*`, `kubectl * --context *prod*`, `git push --force*`, `Read(./**/.env*)`…) **e** `guard-prod.sh`, que casa por regex em `tool_input.command`, exige verbo de leitura para comando que toca produção, e bloqueia `DROP`/`TRUNCATE` em qualquer ambiente. A recusa devolve o que fazer em vez disso (A4) | **P** + **D** (regex) | `55-merge-settings` prova que as negações do projeto sobrevivem ao reinstall; nada prova o bloqueio em si (§6.2) |
+| 12 | Escrita em produção negada em permissão **e** em hook `A2 → R5` | `permissions.deny` com 17 padrões (`*deploy*prd*`, `aws * --profile prd*`, `psql *prd*`, `kubectl * --context *prod*`, `git push --force*`, `git tag:*`, `gh release create*`, `Read(./**/.env*)`…) **e** `guard-prod.sh`: deploy por segmento sem exigir ordem, verbo de leitura como válvula (`LEITURA`, num lugar só), `drop`/`truncate` com cliente SQL, e tag decidida **token a token** pelo verbo de escrita — nunca pelo formato do nome, que foi o furo de 0.2.8. A recusa devolve o que fazer em vez disso (A4) | **P** + **D** | `05-guard-prod` (49 testes, nos dois sentidos) prova o bloqueio e prova que a leitura passa; `55-merge-settings` prova que as negações do projeto sobrevivem ao reinstall |
 | 13 | Script de investigação existe e é read-only `A3 → R5` | `plan-install.sh` checa `ops/investigate.sh` e emite **pendência declarada** se faltar; a instalação segue sem ele. "Usar só verbos de leitura" é por construção e revisão | **D** (presença) + **IA** (conteúdo) | `40-plan` (pendências) |
 | 14 | Teto de autonomia declarado; elevá-lo exige revisão `A6,A7 → R5` | `gen-config.sh` valida o enum (`assistido\|supervisionado\|autonomo`) e, na reinstalação, o valor gravado em `.harness/harness.json` **vence a flag de linha de comando**. O teto é sustentado por permissão, nunca por hook (A8): `assistido` **acrescenta** negações (`git commit`, `git push`) e nunca remove. Depois do merge, `perdeu_deny` verifica que nenhuma negação do projeto saiu | **D** | `50-retrofit`, `55-merge-settings` |
 | 15 | Dono registrado `D6 → R6` | `gen-config.sh` e `scaffold.sh` saem com **exit 2** sem `--owner`. Único parâmetro sem default | **D** bloqueante | `validate.sh` exige a checagem nos dois geradores |
@@ -126,7 +126,16 @@ Nenhuma delas está em §12, e todas reprovam sozinhas:
    em `.harness/settings.proposto.json` e o relatório diz `PERMISSÕES NÃO
    INSTALADAS`. Não há fallback: um `.[0] * .[1]` do `jq` já apagou 11 negações de
    produção escritas à mão, reportando sucesso.
-7. **Lacuna é declarada, nunca silenciada.** Stack sem adaptador instala todo o
+7. **Regra de bloqueio enumera verbo, não formato de argumento.** A trava de tag
+   casava `tag` seguido de `v<dígito>`; `git tag -a v1.2.3` passava, e era a forma
+   usual de release. Regex de formato erra na próxima flag, na próxima ordem e no
+   próximo nome — o conjunto de verbos de escrita é finito e a decisão virou token
+   a token. `validate.sh` reprova o retorno do padrão por formato.
+8. **Hook mora em um lugar só.** Havia duas cópias divergentes de cada um dos
+   quatro hooks, e o `scaffold.sh` trocava apenas o `verify.sh`: projeto novo saía
+   com trava de produção mais fraca que projeto legado. `validate.sh` reprova a
+   segunda cópia.
+9. **Lacuna é declarada, nunca silenciada.** Stack sem adaptador instala todo o
    resto — inclusive a catraca de tamanho — e diz que o gate de fronteira não
    existe ali (D4 → R10).
 
@@ -138,9 +147,19 @@ O que o checklist afirma e a implementação ainda não mede:
    nada varre o repositório instalado. As permissões impedem leitura de `.env`,
    não detectam credencial já commitada. É o único item de §12 cuja conformidade
    hoje é declarada, não verificada.
-2. **Dupla trava de produção sem teste de fumaça (A2, item 12).** A trava existe
-   nos dois lugares e o merge é testado, mas nada faz com o `deny` o que
-   `smoke-test.sh` faz com os gates: plantar a tentativa e confirmar o bloqueio.
+2. ~~**Dupla trava de produção sem teste de fumaça (A2, item 12).**~~ **Fechada em
+   0.2.8**, e a lacuna cobrou o preço antes: um avaliador externo achou num
+   repositório real que `git tag -a v1.2.3 -m rel` — a forma usual de release —
+   contornava a trava, porque a regra casava o formato do nome da tag em vez do
+   verbo. `05-guard-prod` cobre os dois sentidos e reprova 20 vezes contra o hook
+   anterior.
+
+   **O que permanece é alcance, não ausência de prova.** O hook não é à prova de
+   adversário: a válvula de leitura é por palavra, então `./ops/deploy.sh prd
+   --status` passa. Quem garante é `permissions.deny`, avaliado pela plataforma
+   antes do hook (P2/A8 → R5) — e o comportamento do casamento de permissão é da
+   plataforma, fora do alcance dos evals daqui. O hook cobre a variação
+   distraída, que é o caso real.
 3. **C5 (tamanho do `CLAUDE.md`: ~60 linhas na raiz, ~15 no módulo).** Hoje é
    leitura do modelo, e o oráculo seria o mesmo `awk` que a catraca de tamanho já
    usa. É o critério mais barato de tornar determinístico.
@@ -170,6 +189,11 @@ motivo** — a mesma regra D4 que a skill cobra dos outros.
 
 ## Histórico
 
+- **1.1** — item 12 deixa de ser "nada prova o bloqueio": `05-guard-prod` cobre a
+  trava de produção nos dois sentidos. A lacuna §6.2 fecha, e o que resta dela
+  passa a ser declarado como limite de alcance do hook, não como ausência de
+  prova. Duas garantias novas em §5 (verbo em vez de formato; hook em um lugar
+  só), ambas aprendidas de defeito real encontrado por avaliador externo.
 - **1.0** — primeira versão. Mapeia os 17 critérios de `HARNESS.md` §12 (v2.1) à
   implementação v0.2.5, separa os dois planos de validação (produto e repositório
   alvo) e registra cinco lacunas.

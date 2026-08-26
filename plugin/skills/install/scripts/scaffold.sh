@@ -9,7 +9,7 @@
 # a fronteira de HARNESS.md §1: instalar harness não toca código-fonte.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.7"
+VERSION="0.2.8"
 tpl="$here/../assets/template"
 
 repo=""; owner=""; ceiling="supervisionado"; mapa=""
@@ -90,12 +90,38 @@ fi
 # Por isso o verify.sh autocontido do template é trocado pelo dirigido por
 # config — senão o repositório teria dois gates com respostas diferentes.
 mkdir -p "$root/.harness/adapters"
+# Os QUATRO hooks vêm dos assets de retrofit, não do template. Havia duas cópias
+# divergentes de cada um, e só o verify.sh era trocado aqui: o modo B recebia um
+# guard-prod de 27 linhas cuja regra de deploy casava `deploy.sh prd` literal —
+# `./ops/deploy.sh --env prd` passava. Política duplicada divergiu, como sempre.
 for pair in "$here/../assets/gate/boundaries.sh:.harness/gate-boundaries.sh" \
             "$here/../assets/gate/size.sh:.harness/gate-size.sh" \
             "$here/adapters/node.sh:.harness/adapters/node.sh" \
-            "$here/../assets/retrofit/hooks/verify.sh:.claude/hooks/verify.sh"; do
+            "$here/../assets/retrofit/hooks/on-edit.sh:.claude/hooks/on-edit.sh" \
+            "$here/../assets/retrofit/hooks/verify.sh:.claude/hooks/verify.sh" \
+            "$here/../assets/retrofit/hooks/guard-prod.sh:.claude/hooks/guard-prod.sh" \
+            "$here/../assets/retrofit/hooks/cleanup.sh:.claude/hooks/cleanup.sh"; do
   src="${pair%%:*}"; dst="${pair#*:}"
-  grep -v 'harness-generated:' "$src" | sed "s/__VERSION__/$VERSION/g" > "$root/$dst"
+  # mkdir antes do redirect: os hooks já não vêm do template, então
+  # .claude/hooks/ pode não existir — e `>` para diretório ausente falha calado.
+  mkdir -p "$(dirname "$root/$dst")"
+  # A marca é reposta, não só removida. Sem ela o gen-config de uma versão
+  # futura classifica o arquivo como "existe e não é nosso" e o manda para
+  # `pulados` — ou seja, repositório criado pelo modo B nunca receberia
+  # atualização de hook ou de gate (D3 → R10). O hash é do corpo sem a linha de
+  # marca, igual ao que o gen-config calcula, senão os dois discordariam.
+  corpo=$(grep -v 'harness-generated:' "$src" | sed "s/__VERSION__/$VERSION/g")
+  sha=$(printf '%s\n' "$corpo" | sha256sum | cut -c1-16)
+  primeira=$(head -1 <<<"$corpo")
+  if [[ "$primeira" == '#!'* ]]; then
+    # Shebang tem de continuar na primeira linha do arquivo.
+    { printf '%s\n' "$primeira"
+      printf '# harness-generated: %s sha=%s\n' "$VERSION" "$sha"
+      tail -n +2 <<<"$corpo"; } > "$root/$dst"
+  else
+    { printf '# harness-generated: %s sha=%s\n' "$VERSION" "$sha"
+      printf '%s\n' "$corpo"; } > "$root/$dst"
+  fi
   chmod +x "$root/$dst"
 done
 echo '[]' > "$root/.harness/baseline.json"

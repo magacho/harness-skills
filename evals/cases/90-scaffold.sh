@@ -38,3 +38,24 @@ echo 'const x = 1;' > "$W/novo/intruso.js"
 t "recusa scaffold onde já há código-fonte" \
   "! $I/scaffold.sh $W/novo --owner 'Dona Eval'"
 rm -f "$W/novo/intruso.js"
+
+echo "→ install / modo B: os hooks vêm da fonte única e carregam marca"
+t "os quatro hooks são instalados"        "[ \$(ls $W/novo/.claude/hooks/*.sh | wc -l) -eq 4 ]"
+t "e nenhum vem do template (uma cópia só)" \
+  "[ ! -d plugin/skills/install/assets/template/.claude/hooks ]"
+# O guard-prod do template casava `deploy.sh prd` literal: `--env prd` passava, e
+# o modo B recebia trava mais fraca que o modo A. Política duplicada divergiu.
+t "o guard-prod do modo B nega o que o do template deixava passar" \
+  "for c in './ops/deploy.sh --env prd' 'git tag -a v1.2.3 -m rel' 'PRD=1 ./ops/deploy.sh'; do
+     printf '{\"tool_input\":{\"command\":\"%s\"}}' \"\$c\" | bash $W/novo/.claude/hooks/guard-prod.sh \
+       | jq -e '.hookSpecificOutput.permissionDecision == \"deny\"' >/dev/null || exit 1
+   done"
+# Sem marca, o gen-config de uma versão futura classifica como "não é nosso" e
+# manda para `pulados`: repositório do modo B nunca receberia atualização.
+t "arquivo copiado carrega marca de versão (D3 → R10)" \
+  "for f in .claude/hooks/guard-prod.sh .harness/gate-size.sh .harness/adapters/node.sh; do
+     grep -q 'harness-generated' $W/novo/\$f || exit 1; done"
+t "e o hash gravado bate com o do corpo, como o gen-config calcula" \
+  "f=$W/novo/.claude/hooks/guard-prod.sh
+   [ \"\$(grep -o 'sha=[0-9a-f]*' \$f | cut -d= -f2)\" = \"\$(grep -v 'harness-generated:' \$f | sha256sum | cut -c1-16)\" ]"
+t "shebang continua na primeira linha"    "head -1 $W/novo/.claude/hooks/verify.sh | grep -q '^#!'"

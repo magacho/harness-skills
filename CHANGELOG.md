@@ -3,6 +3,84 @@
 Skill que modifica repositório alheio sem changelog é impossível de adotar com
 confiança.
 
+## [0.2.8] — 2026-08-26
+
+Achado por avaliador de código externo num repositório real, no primeiro uso
+sério da skill fora daqui. A lacuna que o permitiu era conhecida e estava
+registrada: `CONFORMIDADE.md` §6.2 dizia que nada fazia com a trava de produção
+o que o `smoke-test.sh` faz com os gates.
+
+### Corrigido — segurança
+- **A trava de tag de release era contornável pela forma usual de release.** A
+  regra casava `tag` seguido imediatamente de `v<dígito>`, então qualquer flag no
+  meio passava: `git tag -a v1.2.3 -m rel` — anotada, que é como release se
+  cria — não era vista. Também passavam `--annotate`, `-s`, `-f`, flag com
+  argumento antes do nome (`-m rel -a v1.2.3`), flag global do git
+  (`git -C x tag -a v1`), nome fora de semver (`v1.2`, `release-1`), e empurrar
+  tag já criada (`git push --tags`)
+- **A correção não adivinha o formato do nome: enumera o verbo.** Regex de
+  formato erra na próxima flag, na próxima ordem e no próximo nome; o conjunto de
+  verbos de escrita (`-a -s -u -m -F -f -d` e as formas longas) é finito. A
+  decisão virou token a token, em `tag_escreve()`. **Leitura passa inteira** —
+  `git tag --list`, `-n`, `--points-at`, `--contains`, `--sort` — porque negar
+  leitura é reprovar trabalho legítimo, o modo de fracasso nº 1
+- **`PRD=1 ./ops/deploy.sh` passava**: a regra pedia `prd` **depois** de `deploy`,
+  e o ambiente vem antes. Agora a checagem é por segmento e sem ordem
+- **`prd_deploy.sh` passava**: `_` é caractere de palavra, então `\bdeploy` não
+  casava. Em vez de mais uma regex, a regra passou a usar o desenho que o resto
+  do arquivo já usava — exige verbo de leitura para liberar. `cat
+  deployment-prod.log` continua sendo investigação
+- **`TRUNCATE users` passava**: a regra exigia a palavra `TABLE`, e Postgres e
+  MySQL aceitam sem. Agora um cliente SQL no comando (`psql`, `mysql`, `sqlite3`…)
+  basta para reprovar `drop`/`truncate` — o que preserva o `truncate -s 0 app.log`
+  do coreutils, que é trabalho legítimo
+- O `deny` base ganhou `Bash(git tag:*)`, `Bash(git push*--tags*)`,
+  `Bash(git update-ref refs/tags*)` e `Bash(gh release create*)`. É
+  deliberadamente cego: aqui é a camada de **garantia** (A2/A8 → R5), e padrão
+  fino é contornado só reordenando flags. Ler tag continua possível pelo hook e
+  por `git describe --tags`
+
+### Corrigido — a causa por trás do furo
+- **Havia duas cópias divergentes de cada um dos quatro hooks**, e o `scaffold.sh`
+  só trocava o `verify.sh`. O modo B recebia um `guard-prod.sh` de 27 linhas cuja
+  regra de deploy casava `deploy.sh prd` **literal** — `./ops/deploy.sh --env prd`
+  passava. Projeto novo saía com trava mais fraca que projeto legado, e nada
+  media a diferença. Agora os quatro vêm dos assets de retrofit, o template não
+  tem mais cópia, e `validate.sh` reprova a segunda
+- **Arquivo copiado pelo scaffold perdia a marca de versão.** Defeito
+  preexistente, ampliado de 4 para 7 arquivos por esta mudança e por isso
+  corrigido junto: sem `harness-generated: <versão> sha=<hash>`, o `gen-config`
+  de uma versão futura classifica o arquivo como "existe e não é nosso" e o manda
+  para `pulados` — repositório criado pelo modo B **nunca receberia atualização
+  de hook ou de gate** (D3 → R10). O hash gravado é o mesmo que o `gen-config`
+  calcula, senão os dois discordariam
+- Os verbos de leitura estavam escritos numa regra e usados numa; agora duas
+  precisam deles e viraram `LEITURA`, em um lugar só
+
+### Adicionado
+- **Caso de eval `05-guard-prod` (49 testes)** — o que faltava para fechar
+  `CONFORMIDADE.md` §6.2 e boa parte da issue #1. O hook recebe JSON no stdin e
+  responde JSON no stdout: testável sem plataforma. Cobre deploy, tag, destruição
+  de dado, credencial e contexto, **nos dois sentidos** — e a metade "tem de
+  passar" é a que importa mais, porque gate que reprova trabalho legítimo é
+  desligado em duas semanas
+- Evals do modo B: os quatro hooks vindos da fonte única, marca de versão
+  presente, hash conferido contra o corpo, shebang na primeira linha
+- `validate.sh` reprova a família: segunda cópia de qualquer hook, trava de tag
+  que volte a casar formato de nome, verbos de leitura duplicados, `deny` base
+  sem `Bash(git tag:*)`, e ausência do eval da trava
+
+### Verificado
+- O eval novo **reprova 20 vezes** contra o `guard-prod.sh` anterior, restaurado
+  de propósito. Eval que passa contra o bug não está medindo o bug
+- 247 evals, 0 falhas
+
+### Nota honesta sobre o alcance
+O hook não é à prova de adversário e não pretende ser: quem quiser burlar
+`./ops/deploy.sh prd --status` consegue, porque a válvula de leitura é por
+palavra. Quem garante é `permissions.deny`, avaliado pela plataforma antes do
+hook (P2/A8 → R5). O hook cobre a variação distraída, que é o caso real.
+
 ## [0.2.7] — 2026-08-26
 
 ### Corrigido

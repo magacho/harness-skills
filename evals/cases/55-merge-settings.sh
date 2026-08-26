@@ -48,8 +48,12 @@ S=$W/ms-real
 cp -a "$F/legado-customizado" "$S"
 $I/plan-install.sh "$S" > "$W/ms-real.plan.json" 2>/dev/null
 $I/gen-config.sh "$S" --plan "$W/ms-real.plan.json" --owner "Dona Eval <eval@exemplo>" --fase 1 > "$W/ms.f1.json" 2>/dev/null
+# Por string exata, não por regex: o deny base do harness também casa "git tag",
+# e contar por padrão frouxo media a soma dos dois lados em vez da sobrevivência
+# do lado do projeto.
 t "as 5 negações do projeto sobrevivem ao reinstall" \
-  "jq -e '[.permissions.deny[] | select(test(\"etl|git tag|workflow|[*]key|supabase\"))] | length == 5' $S/.claude/settings.json"
+  "jq -e --argjson p '[\"Bash(git tag -a v*)\",\"Bash(pnpm etl:*)\",\"Bash(gh workflow run*)\",\"Read(./**/*key*.json)\",\"mcp__supabase__apply_migration\"]' \
+     '(\$p - .permissions.deny) | length == 0' $S/.claude/settings.json"
 t "as do harness entraram por cima"     "jq -e '.permissions.deny | length > 10' $S/.claude/settings.json"
 t "a trava de produção do harness está lá (A2)" \
   "jq -e '[.permissions.deny[] | select(test(\"prd|prod\"))] | length > 0' $S/.claude/settings.json"

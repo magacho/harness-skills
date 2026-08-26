@@ -106,7 +106,7 @@ Responsabilidade dupla continua sendo julgamento, e o lugar dela é o subagente
 
 ## Status
 
-`0.2.7` — diagnostica e instala.
+`0.2.8` — diagnostica e instala.
 
 | | disponível |
 |---|---|

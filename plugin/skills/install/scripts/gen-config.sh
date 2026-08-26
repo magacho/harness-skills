@@ -9,7 +9,7 @@
 # próprio conteúdo. Arquivo editado à mão é PULADO, nunca sobrescrito.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.7"
+VERSION="0.2.8"
 
 repo=""; plan=""; owner=""; ceiling="supervisionado"; fase=""
 while [[ $# -gt 0 ]]; do
@@ -192,11 +192,21 @@ SHIP
   escritos+=(".harness/harness.json")
 
   # A2/A5/A8 → R5. O teto é sustentado por PERMISSÃO, nunca por hook: uma flag
-  # de execução desliga hook. A9: o conjunto base é idêntico nos três modos —
+  # de execução desliga hook.
+  #
+  # `Bash(git tag:*)` é deliberadamente cego: nega o subcomando inteiro, leitura
+  # incluída. Aqui é a camada de GARANTIA, e garantia precisa ser inbypassável —
+  # padrão fino como `git tag -a*` é contornado só reordenando as flags. A
+  # leitura de tag continua possível pelo hook (`git tag --list` passa lá) e por
+  # `git describe --tags` / `git for-each-ref`. `gh release create` e
+  # `git update-ref refs/tags/*` entram porque criam tag sem passar por
+  # `git tag`. A9: o conjunto base é idêntico nos três modos —
   # teto mais baixo só ACRESCENTA negações, nunca remove (A7, monotonicidade).
   base_deny='["Read(./.env*)","Read(./**/.env*)","Read(./**/secrets/**)",
     "Bash(*deploy*prd*)","Bash(*deploy*prod*)","Bash(*deploy*production*)",
     "Bash(git push --force*)","Bash(git push -f*)",
+    "Bash(git tag:*)","Bash(git push*--tags*)","Bash(git push*--follow-tags*)",
+    "Bash(git update-ref refs/tags*)","Bash(gh release create*)",
     "Bash(aws * --profile prd*)","Bash(aws * --profile prod*)",
     "Bash(psql *prd*)","Bash(kubectl * --context *prod*)"]'
   extra_deny='[]'

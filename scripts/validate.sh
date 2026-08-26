@@ -132,6 +132,25 @@ grep -q 'gate-size.sh' plugin/skills/install/scripts/gen-config.sh \
 grep -q 'gate-size.sh' plugin/skills/install/scripts/scaffold.sh \
   || err "scaffold.sh não instala o gate de tamanho"
 
+echo "→ hook mora em um lugar só, e a trava de produção é provada"
+for h in on-edit verify guard-prod cleanup; do
+  n=$(find plugin/skills/install/assets -name "$h.sh" | wc -l)
+  [[ "$n" -eq 1 ]] || err "há $n cópias de $h.sh nos assets — foi assim que o modo B ficou com trava mais fraca"
+  grep -q "retrofit/hooks/$h.sh" plugin/skills/install/scripts/scaffold.sh \
+    || err "scaffold.sh não instala $h.sh da fonte única"
+done
+GP=plugin/skills/install/assets/retrofit/hooks/guard-prod.sh
+# A regra de tag não pode voltar a depender do formato do nome: era o que
+# `git tag -a v1.2.3` contornava. O que decide é o verbo.
+grep -q 'tag_escreve' $GP || err "a trava de tag não enumera o verbo de escrita"
+grep -qE "tag[^\n]*v\?\[0-9\]" $GP \
+  && err "a trava de tag voltou a casar formato de nome de versão"
+grep -q 'LEITURA=' $GP || err "os verbos de leitura não estão em um lugar só"
+grep -q "Bash(git tag:\*)" plugin/skills/install/scripts/gen-config.sh \
+  || err "o deny base não nega o subcomando git tag (camada de garantia, A2)"
+[[ -f evals/cases/05-guard-prod.sh ]] \
+  || err "a trava de produção não tem eval — V9 aplicado a A2"
+
 echo "→ varredura de arquivo-fonte mora em um lugar só"
 GS=plugin/skills/install/assets/gate/size.sh
 grep -q -- '--measure' $GS || err "o gate não expõe --measure: os consumidores voltam a reimplementar find"
