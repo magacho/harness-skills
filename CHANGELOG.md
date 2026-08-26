@@ -3,6 +3,101 @@
 Skill que modifica repositório alheio sem changelog é impossível de adotar com
 confiança.
 
+## [0.2.1] — 2026-08-26
+
+Release de correção. Dois grupos de defeito com a mesma raiz: **um gate ou um
+script reportando sucesso sem ter medido** — a falha nº 5 do `INTENT.md`, criar
+a sensação de cobertura. O 0.2.0 já a tinha corrigido no adaptador; faltava
+aplicar a mesma guarda em todo o resto.
+
+### Corrigido — o gate não cruzava o grafo em TypeScript
+Todo projeto TS recebia um gate instalado que nunca verificou nada. E como o
+adaptador só recusa o falso verde quando cruza *zero* módulo, bastava um `.js`
+no alvo para o gate reportar "sem violações" tendo olhado uma fração do código.
+
+- `dependency-cruiser` 18 não expande **diretório nu** para `.ts`/`.tsx`: só
+  entra sob glob. A 16 expandia — e o `package.json` do template fixa `^16`,
+  enquanto o adaptador cai em `npx` (que baixa a 18) quando o repositório não
+  tem a ferramenta instalada. O mesmo gate dava respostas diferentes conforme
+  existisse `node_modules`, que é garantia dependendo de configuração de máquina
+  (`D1 → R8`). O verbo `run` agora converte alvo que é diretório em
+  `alvo/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}`
+- A correção é **no adaptador**, não nos três chamadores (`boundary-status.sh`,
+  `gate/boundaries.sh`, `plan-install.sh`): saber qual glob a ferramenta exige é
+  conhecimento do adaptador, e é o que o contrato de quatro verbos existe para
+  absorver. Corrigido lá, vale para audit, install e gate de uma vez
+- O glob é restrito a extensões de código de propósito. `alvo/**` varre
+  `CLAUDE.md` e cada um vira órfão: 4 violações fantasma por repositório, todas
+  no baseline
+- `enhancedResolveOptions.extensions` passou a ser gerado na config e foi
+  acrescentado à do template. Sem ele a 18 não resolve import TypeScript sem
+  extensão (`./invoice`): registra o especificador cru, a regra de direção não
+  casa, e o import legítimo vira violação. A 16 resolvia sozinha
+- `ADAPTADOR_NAO_CRUZOU` listava duas causas e nenhuma era a verdadeira neste
+  caso. Somada a terceira, com a instrução de que a conversão de alvo deveria
+  ter rodado
+- O script `boundaries` do template chamava `depcruise ... modules` direto,
+  passando por fora do gate e do baseline. Agora chama
+  `./.harness/gate-boundaries.sh`
+
+### Corrigido — a auditoria reportava sucesso sem ter medido
+- `boundary-status.sh` cruzava os diretórios `src modules` fixos. Repositório
+  cujo código não está em `modules/` recebia um ENOENT, não media nada e **ainda
+  assim saía 0** — a dimensão do baseline, que é o número que decide se a
+  catraca é obrigatória, voltava vazia com cara de sucesso. Agora detecta os
+  alvos reais, sai 3 quando não consegue medir, e devolve JSON com `alvos`,
+  `violacoes`, `por_regra` e `catraca_obrigatoria`
+- `boundary-status.sh` passou a usar o adaptador pelos **quatro verbos** em vez
+  de invocar o `dependency-cruiser` à mão. A guarda de "cruzou zero módulo" já
+  morava no adaptador; duas implementações divergiriam na primeira correção
+  aplicada a só um dos lados. Removida também uma linha morta que rodava
+  `depcruise --no-config` com stdin vazio e descartava a saída
+- `detect-stack.sh` procurava só `.dependency-cruiser.js`, mas o instalador
+  escreve `.cjs`; e procurava o baseline **nativo** da ferramenta em vez de
+  `.harness/baseline.json`. O audit reportava `boundary_config: false` e
+  `baseline: false` em repositório que tinha os dois — ficava cego para a
+  instalação que a skill irmã acabara de fazer. Agora aceita as quatro extensões
+  e distingue os dois baselines: achar o nativo é um **achado**, porque significa
+  catraca delegada ao mecanismo da ferramenta (V8)
+- `check-claims.sh` só verificava script de `package.json` e alvo de `Makefile`.
+  O `CLAUDE.md` que o próprio harness gera cita `./.harness/gate-boundaries.sh`
+  — apagar o gate não aparecia como instrução falsa e o audit reportava
+  `falsas=0`. Agora verifica caminho executável citado em crase: ausente ou sem
+  bit de execução conta como falso (C4 → R1)
+
+### Adicionado
+- `docs/USAGE.md` — guia de uso com avaliação, instalação nos dois modos e a
+  saída real de cada passo, capturada das fixtures. Nenhum exemplo é ilustrativo
+- `evals/fixtures/ts-com-ciclo/` — fixture TypeScript com ciclo e órfão
+  conhecidos, imports **sem extensão**. Todo fixture com grafo era JavaScript,
+  onde o diretório nu funciona: a suíte inteira ficava verde com o defeito
+  presente
+- `detect-stack.sh` reporta `harness_dir`, `gate`, `adapters`, `versao`, `dono` e
+  `teto_de_autonomia`, lidos de `.harness/harness.json`. Sem isso a auditoria não
+  distinguia repositório instalado de repositório cru, nem verificava D6 sem
+  abrir arquivo à mão
+- O verbo `run` do adaptador aceita config em caminho absoluto, para que a
+  sondagem do audit não precise escrever dentro do repositório auditado.
+  "Escreve e apaga depois" não é read-only
+- 25 evals novos (86 → 111). Os de fronteira afirmam `totalCruised > 0` **e** a
+  contagem esperada de violações — um eval que só checasse "saiu 0" continuaria
+  passando com o bug, que foi exatamente o que aconteceu. Um deles entrega o
+  diretório nu direto à ferramenta e exige que cruze zero: trava a regressão
+  pelo mecanismo, não pelo sintoma
+
+### Alterado
+- `README.md` reordenado: abre nomeando o artefato — plugin do Claude Code com
+  duas skills — em vez de abrir pela tese. Os dois sentidos de "instalar" (o
+  plugin no Claude Code, o harness no repositório) passaram a ser separados por
+  nome. A doutrina desceu, sem sair
+
+### Nota
+As 11 violações que apareceram no template quando o grafo passou a ser cruzado
+**não eram reais**: 4 eram `CLAUDE.md` varridos pelo glob amplo e 7 vinham dos
+imports não resolvidos. Sob a 16, com resolução correta, o template sempre teve
+**0 violações** — e continua tendo, agora idêntico nas duas versões. Não houve
+baseline inicial a congelar, e o template não precisou ser corrigido.
+
 ## [0.2.0] — 2026-08-25
 
 ### Adicionado

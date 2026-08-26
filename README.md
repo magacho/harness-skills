@@ -1,8 +1,43 @@
 # harness
 
-Harness de desenvolvimento agêntico: contexto, verificação e fronteiras de módulo
-**verificáveis por máquina**, instaláveis em projeto novo ou legado sem tocar em
+Plugin do Claude Code com **duas skills** que auditam e instalam um harness de
+desenvolvimento agêntico: contexto, verificação e fronteiras de módulo
+**verificáveis por máquina**, em projeto novo ou legado — sem tocar em
 código-fonte.
+
+| skill | o que faz | escreve? |
+|---|---|---|
+| `harness:audit` | diagnostica o repositório e produz três listas: remover, corrigir, adicionar | **não** — read-only |
+| `harness:install` | instala hooks, permissões, catraca de violações e `CLAUDE.md` por módulo | sim, sempre com confirmação |
+
+O guia de uso, com a saída real de cada passo, está em
+[`docs/USAGE.md`](docs/USAGE.md).
+
+## Instalação
+
+São dois "instalar" diferentes, e vale separá-los.
+
+**1 — o plugin, no seu Claude Code.** Enquanto não há repositório remoto
+definido, o marketplace aponta para o diretório local:
+
+    /plugin marketplace add ~/Workspace/harness-skills
+    /plugin install harness@harness-mp
+
+**2 — o harness, no seu repositório.** É o que as skills fazem depois de
+instaladas.
+
+*Projeto existente* — rode `harness:audit` primeiro. É read-only e o relatório
+dele é a especificação do que corrigir; a lista de *remover* costuma ser a mais
+valiosa. Depois `harness:install`, que executa as fases 1 a 3 com um checkpoint
+humano entre cada uma. Nenhuma delas toca código-fonte.
+
+*Projeto novo* — `harness:install` detecta que não há código e cai no modo
+scaffold: copia o template, pergunta os nomes dos módulos do seu domínio, ajusta
+os paths da config de fronteira junto, e planta uma violação para confirmar que o
+gate reprova.
+
+Nos dois modos a instalação mostra o que vai escrever e espera confirmação, é
+idempotente, e nunca sobrescreve o que você editou à mão.
 
 ## O problema
 
@@ -14,44 +49,11 @@ sistema inteiro carregado em contexto.
 A aposta: **a restrição que importa não é a capacidade do modelo — é a ausência de
 oráculo e o tamanho da janela.**
 
-## O que tem aqui
-
-    docs/INTENT.md      por quê — problema, resultados (R1–R12), o que não queremos
-    docs/HARNESS.md     regras — 45 regras, cada uma rastreando a um resultado
-    docs/PLAN.md        como — construção da skill, implantação, deploy
-    docs/adapters/      contrato de adaptador por linguagem
-    plugin/skills/audit/    diagnostica: read-only, produz o relatório
-    plugin/skills/install/  instala: dois modos, um mecanismo
-      assets/template/      scaffold de projeto novo
-      scripts/adapters/     o contrato de adaptador, implementado
-    evals/              fixtures e testes dos scripts
-    scripts/validate.sh validação do próprio produto antes do release
-
-## Começando
-
-    /plugin marketplace add <caminho-ou-repo>
-    /plugin install harness@harness-mp
-
-Enquanto não há repositório remoto definido, o marketplace aponta para o
-diretório local:
-
-    /plugin marketplace add ~/Workspace/harness-skills
-    /plugin install harness@harness-mp
-
-**Projeto existente** — rode `harness:audit` primeiro. É read-only e produz três
-listas: remover, corrigir, adicionar. A de *remover* costuma ser a mais valiosa.
-Depois `harness:install`, que executa as fases 1 a 3 com um checkpoint humano
-entre cada uma. Nenhuma delas toca código-fonte.
-
-**Projeto novo** — `harness:install` detecta que não há código e cai no modo
-scaffold: copia o template, pergunta os nomes dos módulos do seu domínio, ajusta
-os paths da config de fronteira junto, e planta uma violação para confirmar que o
-gate reprova.
-
-Nos dois modos a instalação mostra o que vai escrever e espera confirmação, é
-idempotente, e nunca sobrescreve o que você editou à mão.
-
 ## A pirâmide de verificação
+
+Por edição só o que é grátis para o contexto; por turno o que precisa realimentar
+o agente; no CI o que só precisa impedir o merge. As regras completas estão em
+[`docs/HARNESS.md`](docs/HARNESS.md).
 
 | camada | quando | custo | pega |
 |---|---|---|---|
@@ -60,9 +62,6 @@ idempotente, e nunca sobrescreve o que você editou à mão.
 | lint + fronteira + tipos | por turno | segundos | o que realimenta o agente |
 | subagentes de auditoria | pré-PR / semanal | caro | acoplamento invisível ao grafo |
 | suíte completa | CI | minutos | impedir o merge |
-
-Regra: por edição só o que é grátis para o contexto; por turno o que precisa
-realimentar o agente; no CI o que só precisa impedir o merge.
 
 ## Catraca
 
@@ -75,7 +74,7 @@ qualquer refactor.
 
 ## Status
 
-`0.2.0` — diagnostica e instala.
+`0.2.1` — diagnostica e instala.
 
 | | disponível |
 |---|---|
@@ -101,6 +100,20 @@ O harness **verifica** fronteiras; não as **desenha**. Reorganizar módulos, mo
 código e redesenhar limites é modularização — outra disciplina, outro risco. As
 fases que instalam harness não tocam código-fonte, e isso é o que torna a adoção
 possível.
+
+## O que tem aqui
+
+    plugin/skills/audit/    diagnostica: read-only, produz o relatório
+    plugin/skills/install/  instala: dois modos, um mecanismo
+      assets/template/      scaffold de projeto novo
+      scripts/adapters/     o contrato de adaptador, implementado
+    docs/USAGE.md       guia de uso — avaliação, instalação, saídas reais
+    docs/INTENT.md      por quê — problema, resultados (R1–R12), o que não queremos
+    docs/HARNESS.md     regras — 45 regras, cada uma rastreando a um resultado
+    docs/PLAN.md        como — construção da skill, implantação, deploy
+    docs/adapters/      contrato de adaptador por linguagem
+    evals/              fixtures e testes dos scripts
+    scripts/validate.sh validação do próprio produto antes do release
 
 ## Licença
 

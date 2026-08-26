@@ -70,7 +70,13 @@ module.exports = {
     },
   ],
   options: {
-    doNotFollow: { path: "node_modules" },${tscfg}
+    doNotFollow: { path: "node_modules" },
+    // Sem isto o dependency-cruiser 18 não resolve import TypeScript sem
+    // extensão ("./invoice"): registra o especificador cru, a regra de direção
+    // não casa, e o import vira violação fantasma. A 16 resolvia sozinha.
+    enhancedResolveOptions: {
+      extensions: [".ts", ".tsx", ".d.ts", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json"],
+    },${tscfg}
     // A catraca é do harness, não da ferramenta (V8 → R7,R12): a comparação
     // com o baseline vive em .harness/gate-boundaries.sh, e não em
     // knownViolations. Baseline nativo é otimização, nunca requisito.
@@ -86,9 +92,37 @@ CFG
 run)
   root="${1:?raiz}"; cfg="${2:?config}"; shift 2
   [[ $# -gt 0 ]] || die "run: informe ao menos um alvo"
-  [[ -f "$root/$cfg" ]] || die "run: config ausente em $root/$cfg"
+  # Config absoluta é aceita para que quem sonda o grafo (harness:audit) não
+  # precise escrever um arquivo dentro do repositório auditado: o audit é
+  # read-only, e "escreve e apaga depois" não é read-only.
+  if [[ "$cfg" == /* ]]; then
+    [[ -f "$cfg" ]] || die "run: config ausente em $cfg"
+  else
+    [[ -f "$root/$cfg" ]] || die "run: config ausente em $root/$cfg"
+  fi
   bin=$(depcruise_bin "$root")
-  out=$(cd "$root" && $bin --config "$cfg" --output-type json "$@" 2>/dev/null)
+
+  # dependency-cruiser 18 NÃO expande diretório nu para .ts/.tsx: devolve zero
+  # módulo cruzado e "sem violações" — verde sem ter olhado. A 16 expandia. Todo
+  # projeto TypeScript recebia um gate que nunca verificava nada.
+  #
+  # A normalização mora aqui, e não nos chamadores (audit, gate, plan-install),
+  # porque saber qual glob esta ferramenta exige é conhecimento do adaptador:
+  # é exatamente o que o contrato de quatro verbos existe para absorver.
+  #
+  # O glob é restrito a extensões de código de propósito: "alvo/**" varre
+  # CLAUDE.md e cada um vira órfão, poluindo o baseline com violação que não é
+  # de fronteira.
+  EXT="ts,tsx,mts,cts,js,jsx,mjs,cjs"
+  alvos=()
+  for a in "$@"; do
+    # Aspas em toda parte: "alvo/**" sem aspas, com globstar desligado, o bash
+    # expande para os filhos diretos — que são diretórios nus de novo, e volta
+    # a cruzar zero. As chaves ficam literais para a ferramenta resolver.
+    if [[ -d "$root/$a" ]]; then alvos+=("${a%/}/**/*.{$EXT}"); else alvos+=("$a"); fi
+  done
+
+  out=$(cd "$root" && $bin --config "$cfg" --output-type json "${alvos[@]}" 2>/dev/null)
   if ! jq -e . >/dev/null 2>&1 <<<"$out"; then
     echo "ADAPTADOR_FALHOU: dependency-cruiser não produziu JSON válido." >&2
     exit 3
@@ -103,6 +137,10 @@ run)
     echo "O gate não verificou nada. Causas comuns:" >&2
     echo "  · projeto TypeScript sem 'typescript' instalado (rode a instalação de dependências)" >&2
     echo "  · alvo errado em .harness/harness.json → boundary.targets" >&2
+    echo "  · alvo entregue como diretório nu em projeto TypeScript: o" >&2
+    echo "    dependency-cruiser 18 só expande .ts/.tsx sob glob. Este" >&2
+    echo "    adaptador converte diretório em alvo/**/*.{ext} antes de chamar" >&2
+    echo "    a ferramenta; se a mensagem apareceu, a conversão não rodou." >&2
     echo "NÃO trate isto como verde." >&2
     exit 3
   fi

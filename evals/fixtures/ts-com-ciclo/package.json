@@ -1,0 +1,6 @@
+{
+  "name": "fixture-ts-com-ciclo",
+  "private": true,
+  "scripts": { "lint": "echo 'lint verde'" },
+  "devDependencies": { "typescript": "^5" }
+}

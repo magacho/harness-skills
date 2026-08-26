@@ -31,6 +31,11 @@ Se `boundary_adapter` vier como `unsupported:*`, **declare em voz alta** no
 relatório que o gate de fronteira não está disponível para esta stack, e siga com
 o resto (regra D4). Nunca silencie a lacuna; nunca aborte a auditoria.
 
+`boundary-status.sh` sai com **código 3** quando não conseguiu medir o grafo —
+sem diretório de código reconhecido, ou adaptador que cruzou zero módulo. Isso
+**não é "sem violações"**: é dimensão desconhecida. Relate como lacuna e não
+conclua nada sobre a catraca a partir dela.
+
 ### 2. Leitura de contexto
 
 Leia o `CLAUDE.md` raiz e os de módulo. Avalie contra as regras C:

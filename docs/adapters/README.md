@@ -50,6 +50,27 @@ arquivo nenhum. Todo adaptador novo precisa da mesma guarda: gate
 silenciosamente verde é pior que gate nenhum, porque cria a sensação de
 cobertura (`INTENT.md` §11, fracasso nº 5).
 
+## Normalizar a ferramenta é trabalho do adaptador
+
+O `run` do `node.sh` converte alvo que é diretório em
+`alvo/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}` antes de chamar o binário. O
+`dependency-cruiser` 18 não expande diretório nu para `.ts`/`.tsx` — a 16
+expandia — e sem a conversão todo projeto TypeScript recebia um gate que cruzava
+zero módulo.
+
+A conversão mora no adaptador de propósito. Três chamadores entregam alvos
+(`harness:audit`, o gate instalado e o planejador da instalação); corrigir em
+cada um significaria três correções divergindo na primeira que fosse aplicada a
+só um deles. **Quirk de ferramenta pertence ao adaptador — é o que o contrato
+existe para absorver.**
+
+O mesmo vale para resolução: a config gerada declara
+`enhancedResolveOptions.extensions` porque sem ela a 18 não resolve import sem
+extensão e transforma import legítimo em violação. Adaptador novo deve garantir
+que **duas versões da mesma ferramenta deem a mesma resposta** — se dependem de
+qual versão o `npx` baixou, a garantia depende de configuração de máquina
+(`D1 → R8`).
+
 ## Adicionando um adaptador
 
 O contrato acima só foi exercitado por uma implementação. Ele provavelmente está

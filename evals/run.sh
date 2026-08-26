@@ -26,17 +26,70 @@ t "identifica harness existente"          "$A/detect-stack.sh $T | grep -q '\"se
 t "conta CLAUDE.md de módulo"             "[ \$($A/detect-stack.sh $T | grep -o '\"claude_md_module_count\": [0-9]*' | awk '{print \$2}') -ge 5 ]"
 t "declara stack sem adaptador"           "$A/detect-stack.sh $F/python-sem-adaptador | grep -q 'unsupported'"
 
+# Regressão: o audit reportava boundary_config=false e baseline=false num repo
+# que TINHA os dois. Procurava .dependency-cruiser.js (o instalador escreve
+# .cjs) e o baseline NATIVO da ferramenta em vez de .harness/baseline.json —
+# ficava cego para a instalação que a skill irmã acabara de fazer.
+RI=$W/repo-instalado
+mkdir -p "$RI/.harness" && echo '{}' > "$RI/package.json"
+: > "$RI/.dependency-cruiser.cjs"; echo '[]' > "$RI/.harness/baseline.json"
+printf '{"harness_version":"0.2.0","owner":"Fulano","autonomy_ceiling":"supervisionado"}\n' \
+  > "$RI/.harness/harness.json"
+t "enxerga a config .cjs que o instalador escreve" \
+  "$A/detect-stack.sh $RI | jq -e '.harness.boundary_config == true'"
+t "enxerga o baseline do harness (V8)"    "$A/detect-stack.sh $RI | jq -e '.harness.baseline == true'"
+t "distingue baseline nativo do da catraca" \
+  "$A/detect-stack.sh $RI | jq -e '.harness.baseline_nativo == false'"
+t "lê o dono registrado (D6)"             "$A/detect-stack.sh $RI | jq -e '.harness.dono == \"Fulano\"'"
+t "lê o teto de autonomia (A6)"           "$A/detect-stack.sh $RI | jq -e '.harness.teto_de_autonomia == \"supervisionado\"'"
+
 echo "→ audit / check-claims (regra C4)"
 t "template não tem instrução falsa"      "$A/check-claims.sh $T"
 t "detecta instrução falsa no fixture"    "! $A/check-claims.sh $F/legado-com-instrucao-falsa"
 t "aponta exatamente 2 falsas"            "{ $A/check-claims.sh $F/legado-com-instrucao-falsa || true; } | grep -q 'falsas=2'"
 t "repo sem CLAUDE.md não quebra"         "$A/check-claims.sh $F/sem-harness | grep -q SEM_CLAUDE_MD"
 
+# Regressão: só scripts de package.json eram verificados. O CLAUDE.md que o
+# próprio harness gera cita ./.harness/gate-boundaries.sh — apagar o gate não
+# aparecia como instrução falsa, e o audit reportava falsas=0.
+CP=$W/claims-caminho
+mkdir -p "$CP"; echo '{"scripts":{}}' > "$CP/package.json"
+printf '# x\n\n- `./.harness/gate-boundaries.sh` — fronteiras\n' > "$CP/CLAUDE.md"
+t "acusa caminho citado e ausente (C4)"   "! $A/check-claims.sh $CP"
+t "e diz que o caminho não existe"        "{ $A/check-claims.sh $CP || true; } | grep -q 'não existe'"
+mkdir -p "$CP/.harness"; printf '#!/bin/sh\n' > "$CP/.harness/gate-boundaries.sh"
+t "caminho presente mas não executável reprova" "! $A/check-claims.sh $CP"
+chmod +x "$CP/.harness/gate-boundaries.sh"
+t "caminho presente e executável passa"   "$A/check-claims.sh $CP"
+
 echo "→ audit / read-only"
 before=$(find $T $F -type f -newermt '-1 second' 2>/dev/null | wc -l)
 $A/detect-stack.sh $T >/dev/null; $A/check-claims.sh $T >/dev/null
 after=$(find $T $F -type f -newermt '-1 second' 2>/dev/null | wc -l)
 t "auditoria não escreve arquivo"         "[ $before -eq $after ]"
+
+echo "→ audit / boundary-status (dimensão do baseline)"
+# Regressão: cruzava "src modules" fixo. Repo sem modules/ devolvia ENOENT, não
+# media nada e ainda assim saía 0 — a dimensão do baseline, que é o número que
+# decide se a catraca é obrigatória, voltava vazia com cara de sucesso.
+SA=$W/sem-alvo; mkdir -p "$SA"; echo '{"name":"x"}' > "$SA/package.json"
+t "sem diretório de código sai 3, não 0"  "! $A/boundary-status.sh $SA"
+t "e diz que não é verde"                 "{ $A/boundary-status.sh $SA 2>&1 || true; } | grep -q 'NÃO é verde'"
+t "stack sem adaptador declara a lacuna"  "$A/boundary-status.sh $F/python-sem-adaptador | grep -q ADAPTADOR_INDISPONIVEL"
+if [[ $rede -eq 1 ]]; then
+  t "mede o grafo com código em src/"     "$A/boundary-status.sh $F/legado-com-ciclos | jq -e '.violacoes == 2'"
+  t "reporta os alvos que de fato cruzou" "$A/boundary-status.sh $F/legado-com-ciclos | jq -e '.alvos == [\"src\"]'"
+  t "decide se a catraca é obrigatória"   "$A/boundary-status.sh $F/legado-com-ciclos | jq -e '.catraca_obrigatoria == true'"
+  bs_antes=$(find $F/legado-com-ciclos -type f | sort | md5sum)
+  $A/boundary-status.sh $F/legado-com-ciclos >/dev/null 2>&1
+  bs_depois=$(find $F/legado-com-ciclos -type f | sort | md5sum)
+  t "sonda o grafo sem escrever no repo"  "[ '$bs_antes' = '$bs_depois' ]"
+else
+  s "mede o grafo com código em src/"     "dependency-cruiser indisponível (sem rede)"
+  s "reporta os alvos que de fato cruzou" "dependency-cruiser indisponível (sem rede)"
+  s "decide se a catraca é obrigatória"   "dependency-cruiser indisponível (sem rede)"
+  s "sonda o grafo sem escrever no repo"  "dependency-cruiser indisponível (sem rede)"
+fi
 
 # ===========================================================================
 echo "→ install / adaptador de fronteira (contrato de quatro verbos)"
@@ -52,6 +105,45 @@ t "catraca não usa knownViolations da ferramenta (V8)" \
   "! $I/adapters/node.sh generate-config $F/legado-com-ciclos src | grep -qE '^\s*knownViolations'"
 
 # ===========================================================================
+echo "→ install / grafo TypeScript (regressão do alvo nu)"
+# O dependency-cruiser 18 não expande diretório nu para .ts/.tsx: devolvia zero
+# módulo cruzado e "sem violações". Todo projeto TS recebia um gate que nunca
+# verificou nada. Todo fixture com grafo era JavaScript — onde o diretório nu
+# funciona — e por isso a suíte inteira ficava verde com o defeito presente.
+#
+# Estes evals afirmam totalCruised > 0 E a contagem esperada: um eval que só
+# checasse "saiu 0" continuaria passando com o bug.
+if [[ $rede -eq 1 ]]; then
+  TSF=$F/ts-com-ciclo
+  TSCFG=$W/dc-ts.cjs
+  $I/adapters/node.sh generate-config $TSF src > $TSCFG 2>/dev/null
+  TSOUT=$W/ts-run.json
+  $I/adapters/node.sh run $TSF $TSCFG src > $TSOUT 2>/dev/null
+  t "cruza módulo em projeto TypeScript"  "[ \$(jq '.summary.totalCruised' $TSOUT) -gt 0 ]"
+  t "cruza exatamente os 3 do fixture"    "jq -e '.summary.totalCruised == 3' $TSOUT"
+  t "acha o ciclo e o órfão (2 violações)" \
+    "[ \$($I/adapters/node.sh normalize $TSOUT | jq 'length') -eq 2 ]"
+  t "o ciclo em .ts é reportado"          "$I/adapters/node.sh normalize $TSOUT | jq -e 'any(.regra == \"sem-ciclos\")'"
+  # Import TS sem extensão ("./faturar"): a v18 registrava o especificador cru,
+  # a regra de direção não casava e virava violação fantasma.
+  t "import sem extensão é resolvido"     "$I/adapters/node.sh normalize $TSOUT | jq -e 'all(.[].destino; startswith(\".\") | not)'"
+  t "e resolve para o caminho real"       "$I/adapters/node.sh normalize $TSOUT | jq -e 'any(.destino == \"src/cobranca/faturar.ts\")'"
+  # A prova de que a transformação de alvo é o que salva: entregando o
+  # diretório nu direto à ferramenta, o mesmo fixture cruza zero.
+  nu=$(cd $TSF && npx --yes --package dependency-cruiser depcruise --config $TSCFG --output-type json src 2>/dev/null | jq '.summary.totalCruised')
+  t "diretório nu cruzaria zero (o defeito)" "[ \"${nu:-0}\" -eq 0 ]"
+  t "audit mede baseline em projeto TS"   "$A/boundary-status.sh $TSF | jq -e '.violacoes == 2'"
+  t "e não sai 3 num projeto TS"          "$A/boundary-status.sh $TSF >/dev/null"
+else
+  for n in "cruza módulo em projeto TypeScript" "cruza exatamente os 3 do fixture" \
+           "acha o ciclo e o órfão (2 violações)" "o ciclo em .ts é reportado" \
+           "import sem extensão é resolvido" "e resolve para o caminho real" \
+           "diretório nu cruzaria zero (o defeito)" "audit mede baseline em projeto TS" \
+           "e não sai 3 num projeto TS"; do
+    s "$n" "dependency-cruiser indisponível (sem rede)"
+  done
+fi
+
 echo "→ install / plano (read-only)"
 $I/plan-install.sh $F/legado-com-ciclos > "$W/plan-legado.json" 2>/dev/null
 $I/plan-install.sh $F/repo-vazio        > "$W/plan-vazio.json" 2>/dev/null

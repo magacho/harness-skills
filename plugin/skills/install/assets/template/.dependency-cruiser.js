@@ -73,6 +73,13 @@ module.exports = {
   ],
   options: {
     doNotFollow: { path: "node_modules" },
+    // Sem isto o dependency-cruiser 18 não resolve import TypeScript sem
+    // extensão ("./invoice"): registra o especificador cru e a regra de
+    // direção não casa. A 16, que este package.json fixa, resolvia sozinha —
+    // por isso a lacuna passou. O gate tem de dar a mesma resposta nas duas.
+    enhancedResolveOptions: {
+      extensions: [".ts", ".tsx", ".d.ts", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json"],
+    },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: "tsconfig.json" },
     // A catraca é do harness, não da ferramenta (V8): a comparação com o

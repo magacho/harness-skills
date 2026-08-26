@@ -4,8 +4,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint modules",
-    "boundaries": "depcruise --config .dependency-cruiser.js modules",
-    "boundaries:graph": "depcruise --config .dependency-cruiser.js --output-type dot modules | dot -Tsvg > docs/dependency-graph.svg",
+    "boundaries": "./.harness/gate-boundaries.sh",
+    "boundaries:graph": "depcruise --config .dependency-cruiser.js --output-type dot 'modules/**/*.{ts,tsx,js,jsx}' | dot -Tsvg > docs/dependency-graph.svg",
     "test": "vitest run"
   },
   "devDependencies": {
