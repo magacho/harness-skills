@@ -20,11 +20,13 @@ O guia de uso, com a saída real de cada passo, está em
 
 São dois "instalar" diferentes, e vale separá-los.
 
-**1 — o plugin, no seu Claude Code.** Enquanto não há repositório remoto
-definido, o marketplace aponta para o diretório local:
+**1 — o plugin, no seu Claude Code.**
 
-    /plugin marketplace add ~/Workspace/harness-skills
+    /plugin marketplace add magacho/harness-skills
     /plugin install harness@harness-mp
+
+Do diretório local também funciona, para desenvolver a própria skill:
+`/plugin marketplace add ~/Workspace/harness-skills`.
 
 **2 — o harness, no seu repositório.** É o que as skills fazem depois de
 instaladas.
@@ -106,7 +108,7 @@ Responsabilidade dupla continua sendo julgamento, e o lugar dela é o subagente
 
 ## Status
 
-`0.2.8` — diagnostica e instala.
+`0.2.9` — diagnostica e instala.
 
 | | disponível |
 |---|---|
@@ -116,11 +118,12 @@ Responsabilidade dupla continua sendo julgamento, e o lugar dela é o subagente
 | Catraca de violações | sim, genérica: a comparação é do harness, não da ferramenta |
 | Fronteiras em JS/TS | sim, via dependency-cruiser |
 | Fronteiras em Python, JVM, Go | não — contrato de adaptador escrito, ausência declarada em voz alta |
-| Roster de subagentes (fase 4) | não |
+| Roster de subagentes (fase 4) | parcial: o `architect` vem no template do modo B; o revisor de mudança é manual nos dois modos |
 | Piloto de modularização (fases 5–6) | não, e não é escopo do harness |
 
-`harness:install` para na fase 3. O roster da onda 1 — revisor de mudança e
-arquiteto — ainda é trabalho manual, e a skill diz isso ao terminar em vez de
+`harness:install` para na fase 3. Do roster da onda 1, o arquiteto vem pronto no
+template — então projeto novo já sai com ele — e o revisor de mudança é trabalho
+manual nos dois modos. A skill diz qual metade falta ao terminar, em vez de
 deixar como omissão.
 
 O contrato de adaptador só foi exercitado por uma implementação. Provavelmente
@@ -142,12 +145,14 @@ possível.
       scripts/adapters/     o contrato de adaptador, implementado
     docs/USAGE.md       guia de uso — avaliação, instalação, saídas reais
     docs/INTENT.md      por quê — problema, resultados (R1–R12), o que não queremos
-    docs/HARNESS.md     regras — 45 regras, cada uma rastreando a um resultado
+    docs/HARNESS.md     regras — 56 regras, cada uma rastreando a um resultado
     docs/PLAN.md        como — construção da skill, implantação, deploy
     docs/CONFORMIDADE.md  mapa de validação — cada critério de §12, o mecanismo e o tipo
     docs/adapters/      contrato de adaptador por linguagem
+    docs/adr/           decisões deste repositório
     evals/              fixtures e testes dos scripts
-    scripts/validate.sh validação do próprio produto antes do release
+    scripts/validate.sh    validação do próprio produto antes do release
+    scripts/capture-usage.sh  recaptura as saídas reais que o USAGE publica
 
 ## Licença
 

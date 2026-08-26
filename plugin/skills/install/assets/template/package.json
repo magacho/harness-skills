@@ -13,7 +13,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "dependency-cruiser": "^16.10.4",
+    "dependency-cruiser": "^18.0.0",
     "eslint": "^9",
     "prettier": "^3",
     "typescript": "^5.9.3",

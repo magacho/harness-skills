@@ -146,8 +146,16 @@ fronteira e um arquivo de `teto + 1` linhas contra o de tamanho; reporta por gat
 e só sai 3 quando nenhum dos dois pôde ser provado. Se o teste falhar, não
 reporte a instalação como concluída — investigue primeiro.
 
-A fase 4 do `PLAN.md` (roster onda 1: revisor de mudança e arquiteto) **não é
-instalada por esta skill**. Diga isso ao entregar, em vez de deixar como omissão.
+Diga ao entregar o que **não** foi instalado, em vez de deixar como omissão — e a
+conta é diferente nos dois modos:
+
+- **modo A:** a fase 4 do `PLAN.md` inteira. Nem o revisor de mudança nem o
+  arquiteto são instalados; os dois são trabalho manual.
+- **modo B:** o template traz `.claude/agents/architect.md` e o scaffold o copia,
+  então o repositório já sai com o arquiteto. Falta o **revisor de mudança**.
+
+Não diga "o roster não é instalado" no modo B: é falso, e o usuário deixa de
+revisar um subagente que está no repositório dele.
 
 ---
 

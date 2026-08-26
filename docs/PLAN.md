@@ -6,7 +6,7 @@ empacotar e publicar isso como produto distribuível.
 Documento **executável e descartável**: quando as fases terminarem, vira
 histórico. As regras duráveis estão no `HARNESS.md`; o porquê, no `INTENT.md`.
 
-Versão 2.1 · Derivado de `INTENT.md` v1.1 e `HARNESS.md` v2.0
+Versão 2.2 · Derivado de `INTENT.md` v1.1 e `HARNESS.md` v2.1
 
 ---
 
@@ -20,7 +20,7 @@ escrita. O segundo adiciona a escrita.
 | Skills | `harness:audit`, `harness:install` | — |
 | Linguagem | Node / TypeScript | Python, JVM, Go |
 | Escrita | `CLAUDE.md`, `.claude/**`, `.harness/**`, config de fronteira | código-fonte, sempre |
-| Fases do §4 | 1, 2 e 3 (modo A); trilho A inteiro (modo B) | 4 (roster), 5–6 (modularização) |
+| Fases do §4 | 1, 2 e 3 (modo A, projeto existente); trilho inteiro (modo B, projeto novo) | 4 (roster), 5–6 (modularização) |
 
 **Por que o `audit` veio primeiro:** é read-only, entrega valor sozinho, roda em
 qualquer repositório sem negociação — e o relatório dele é a especificação do que
@@ -113,7 +113,11 @@ gerador — e não é reproduzível entre execuções.
 
 ## 4. Trilhos de implantação
 
-### Trilho A — Greenfield
+### Modo B — projeto novo (greenfield)
+
+Até a v2.1 este trilho se chamava "A" e o retrofit "B" — exatamente ao contrário
+dos modos que a skill expõe. Os nomes aqui passam a ser os da skill: o que o
+usuário lê no `install/SKILL.md` é o que ele encontra neste documento.
 
 Resolvido pelo scaffold. Sequência: copiar; renomear módulos para o domínio real;
 ajustar os paths da config de fronteira junto; instalar dependências (sem
@@ -125,7 +129,7 @@ que o gate reprova** `V9 → R3`.
 O exemplo do scaffold é o que o agente vai imitar. Trocá-lo cedo importa mais do
 que parece.
 
-### Trilho B — Retrofit
+### Modo A — projeto existente (retrofit)
 
 | fase | o que faz | toca código? | aceite |
 |---|---|---|---|
@@ -133,7 +137,7 @@ que parece.
 | **1** | hooks, permissões, comandos, dono, teto | não | gate roda, passa hoje, reprova violação plantada |
 | **2** | **catracas** (fronteira e tamanho) | não | dois baselines commitados; violação nova reprova, antiga não; arquivo acima do teto não cresce |
 | **3** | contexto: raiz enxuta + `CLAUDE.md` por módulo existente | não | toda afirmação executa |
-| **4** | roster onda 1: revisor de mudança, arquiteto | não | cada um declara o que não repete `G3` |
+| **4** | roster onda 1: revisor de mudança, arquiteto | não | cada um declara o que não repete `G3`. Fora do escopo da skill hoje — com uma exceção: o template do modo B já traz `.claude/agents/architect.md`, então projeto novo nasce com metade da onda |
 | **5** | piloto de modularização | **sim** | fora do escopo do harness |
 | **6** | catraca apertando | sim | baseline decrescente por sprint |
 
@@ -153,9 +157,13 @@ sucesso tem observador.
 
 ## 5. Empacotamento
 
-### A bifurcação em aberto
+### A bifurcação — decidida
 
-Duas opções, e a escolha muda esta seção inteira:
+Havia duas opções. **A escolha foi repositório separado**, e está no disco:
+`harness-skills`, com marketplace próprio (`harness-mp`) e release por tag
+`harness-v*`. O que a tabela abaixo previa como custo — CI e validação
+duplicados — não se materializou: o `validate.sh` e o `run.sh` deste repositório
+não têm equivalente no `vibe`, então não há duplicação, há divergência de escopo.
 
 | | plugin separado, mesmo marketplace | repositório separado |
 |---|---|---|
@@ -164,10 +172,10 @@ Duas opções, e a escolha muda esta seção inteira:
 | Cadência de release | independente **se** houver tag por prefixo | independente por construção |
 | Custo | uma linha no workflow | manutenção paralela |
 
-**Recomendação: plugin separado no mesmo marketplace, com tag por prefixo.**
-`vibe-v0.3.0` publica só o `vibe`; `harness-v0.1.0` publica só o `harness`.
-Cadência independente — que importa, porque o `harness` vai mudar muito nos
-primeiros meses e o `vibe` está estável — sem duplicar maquinaria.
+A recomendação original era plugin separado no **mesmo** marketplace, com tag por
+prefixo. O prefixo ficou (`harness-v0.2.9`), o marketplace compartilhado não: com
+repositório próprio, a cadência já é independente por construção e o prefixo passa
+a ser convenção de leitura, não mecanismo de separação.
 
 **Por que plugin separado e não mais uma skill dentro do `vibe`:** as skills de
 julgamento são portáveis e rodam em qualquer lugar, inclusive num chat. As de
@@ -252,8 +260,13 @@ dizer isso em vez de instalar.
 4. **Rodar em um piloto pequeno e bagunçado.** Repositório limpo tem baseline
    vazio, catraca sem função, e não ensina nada sobre a fase que decide. É o
    próximo passo, e o único que ainda não tem dado.
-5. **Repositório de terceiro.** Harness testado só na casa do autor sempre parece
-   funcionar.
+5. **Repositório de terceiro.** ~~Harness testado só na casa do autor sempre
+   parece funcionar.~~ Aconteceu parcialmente em `0.2.8`: um avaliador externo
+   rodou a skill num repositório real e achou que `git tag -a v1.2.3 -m rel`
+   contornava a trava de produção — a forma usual de release. Um uso, um defeito
+   grave encontrado, e nenhum eval daqui o teria pego. O passo continua aberto
+   porque um repositório não é evidência; a lição é que ele vale mais que o passo
+   4.
 6. **Roster onda 1** — revisor de mudança e arquiteto (fase 4 do §4).
 7. **Segundo adaptador de linguagem.** É o que vai revelar onde o contrato de
    quatro verbos está errado.
@@ -263,11 +276,13 @@ dizer isso em vez de instalar.
 
 ## 10. Decisões em aberto
 
-| decisão | quem decide | bloqueia |
-|---|---|---|
-| Plugin separado ou repositório separado | mantenedor | §5 e §6 |
-| Repositório piloto | mantenedor | passo 2 da §9 |
-| Formato do arquivo de teto de autonomia | mantenedor | fase 1 |
-| Segunda linguagem a suportar | evidência de uso | validação do contrato |
+| decisão | quem decide | bloqueia | estado |
+|---|---|---|---|
+| Plugin separado ou repositório separado | mantenedor | §5 e §6 | **fechada:** repositório separado, marketplace `harness-mp`, tag `harness-v*` |
+| Formato do arquivo de teto de autonomia | mantenedor | fase 1 | **fechada:** `.harness/harness.json → autonomy_ceiling`, enum validado, o valor gravado vence a flag (A7) |
+| Repositório piloto | mantenedor | passo 4 da §9 | aberta |
+| Segunda linguagem a suportar | evidência de uso | validação do contrato | aberta |
 
-Nenhuma bloqueia começar o `harness:audit`.
+Decisão fechada fica na tabela com o resultado em vez de sair dela: o valor deste
+documento é registrar o que foi decidido, e uma linha apagada não conta a
+história. Nenhuma das duas abertas bloqueia usar o que já existe.

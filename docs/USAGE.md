@@ -4,11 +4,23 @@ Como avaliar um repositório e instalar o harness nele. Documento para **quem
 usa** as skills; o porquê está em `INTENT.md`, as regras em `HARNESS.md`, o
 roadmap em `PLAN.md`.
 
-Todas as saídas abaixo são **reais**, capturadas rodando os scripts sobre as
-fixtures de `evals/fixtures/` — `legado-com-ciclos` (Node, com um ciclo e um
-órfão de verdade), `nao-merece-harness`, `python-sem-adaptador` e `repo-vazio`.
-Nada aqui é ilustrativo: a mesma regra C4 que a skill cobra dos outros vale para
-esta página.
+Todas as saídas abaixo são **reais**, e são recapturáveis num comando:
+
+    ./scripts/capture-usage.sh        # todos os blocos
+    ./scripts/capture-usage.sh 5.2    # um bloco
+
+As fixtures são as de `evals/fixtures/` — `legado-com-instrucao-falsa`,
+`legado-com-ciclos` (Node, com um ciclo e um órfão de verdade), `sem-harness`,
+`nao-merece-harness`, `python-sem-adaptador` e `repo-vazio`. Nos blocos de
+catraca de tamanho, o `legado-com-ciclos` recebe o mesmo god file de 450 linhas
+que o eval `70-catraca-tamanho` planta: fixture sem arquivo grande não tem o que
+congelar.
+
+Nada aqui é ilustrativo, e isso é verificado: a mesma regra C4 que a skill cobra
+dos outros vale para esta página. Uma vez a afirmação ficou falsa — os blocos de
+tamanho traziam sete god files e um arquivo de 1840 linhas que nenhuma fixture
+tinha, e a prosa em volta media um repositório inexistente. O script acima existe
+para que recapturar seja mais barato que inventar.
 
 ---
 
@@ -25,7 +37,7 @@ ver §9.
 
 ## 2. Instalar o plugin
 
-    /plugin marketplace add ~/Workspace/harness-skills
+    /plugin marketplace add magacho/harness-skills
     /plugin install harness@harness-mp
 
 Duas skills ficam disponíveis:
@@ -46,7 +58,7 @@ Peça em linguagem natural:
 
 > audita o harness deste repositório
 
-A skill roda três coletas mecânicas e interpreta o resultado.
+A skill roda quatro coletas mecânicas e interpreta o resultado.
 
 ### 3.1 Contexto do repositório
 
@@ -56,16 +68,29 @@ A skill roda três coletas mecânicas e interpreta o resultado.
 {
   "stack": "node",
   "layout": "single",
+  "package_manager": "unknown",
   "boundary_adapter": "dependency-cruiser",
   "harness": {
     "claude_md_root": true,
     "claude_dir": false,
+    "settings": false,
+    "hooks": false,
+    "agents": false,
+    "commands": false,
     "boundary_config": false,
     "harness_dir": false,
+    "gate": false,
+    "adapters": false,
     "baseline": false,
-    "dono": null
+    "baseline_nativo": false,
+    "versao": null,
+    "dono": null,
+    "teto_de_autonomia": null,
+    "adr_dir": false,
+    "other_agent_configs": false
   },
-  "ci": false
+  "ci": false,
+  "claude_md_module_count": 0
 }
 ```
 
@@ -76,7 +101,8 @@ Num repositório que **já tem** o harness, os mesmos campos respondem se a
 instalação está inteira: `harness_dir`, `gate`, `baseline`, `versao`, `dono` e
 `teto_de_autonomia`. `baseline_nativo` é campo à parte de propósito — encontrar
 o baseline da própria ferramenta significa catraca delegada ao mecanismo dela,
-que é o que a regra V8 proíbe.
+que é o que a regra V8 proíbe. `other_agent_configs` é o que abre a lista de
+**remover**: `.cursorrules` e `AGENTS.md` conectados e não usados.
 
 ### 3.2 As afirmações são verdadeiras? (regra C4)
 
@@ -85,26 +111,28 @@ Este é o achado mais comum e o mais barato de corrigir.
     ./scripts/check-claims.sh <repo>
 
 ```
-FALSA pnpm build  (script ausente no package.json)
-OK    pnpm lint
+FALSA pnpm lint  (script ausente no package.json)
+OK    pnpm test
+FALSA pnpm typecheck  (script ausente no package.json)
 ---
-verificadas=2 ok=1 falsas=1
+verificadas=3 ok=1 falsas=2
 ```
 
 Verifica dois tipos de afirmação: script de pacote (`npm run x`, `make y`) e
 caminho executável citado em crase (`./ops/deploy.sh`). Caminho que não existe,
 ou que existe sem bit de execução, conta como falso.
 
-Sai com código **3** quando há afirmação falsa. O `CLAUDE.md` prometia
-`pnpm build`; o `package.json` não tem esse script. O agente confia na promessa e
-erra com confiança — por isso instrução falsa é o **primeiro** item da lista de
-corrigir, antes de qualquer coisa nova.
+Sai com código **3** quando há afirmação falsa. O `CLAUDE.md` desta fixture
+prometia `pnpm lint` e `pnpm typecheck`; o `package.json` só tem `test`. O agente
+confia na promessa e erra com confiança — por isso instrução falsa é o
+**primeiro** item da lista de corrigir, antes de qualquer coisa nova.
 
 ### 3.3 Fronteiras e dimensão do baseline
 
     ./scripts/boundary-status.sh <repo>
 
-```json
+```
+SEM_CONFIG: regra mínima (ciclo e órfão) só para dimensionar o baseline
 {
   "alvos": ["src"],
   "violacoes": 2,
@@ -112,6 +140,10 @@ corrigir, antes de qualquer coisa nova.
   "catraca_obrigatoria": true
 }
 ```
+
+A primeira linha vai para `stderr` e é parte da resposta: o repositório auditado
+não tem config de fronteira, então o script sonda com a regra mínima em vez de
+inventar uma arquitetura para medir contra.
 
 `violacoes` é o número que decide se a catraca de fronteira é obrigatória. O script detecta
 os alvos reais do repositório — `modules`, `packages`, `apps`, `libs`,
@@ -185,6 +217,7 @@ gates passam **hoje**, o manifesto completo e as pendências:
   "modulos": ["src/cobranca", "src/comum", "src/faturamento"],
   "boundary": {
     "adapter": "node",
+    "reason": "",
     "config": ".dependency-cruiser.cjs",
     "targets": ["src"]
   },
@@ -194,20 +227,25 @@ gates passam **hoje**, o manifesto completo e as pendências:
   },
   "size": {
     "ceiling": 400,
-    "acima_do_teto": 7,
-    "maior": { "arquivo": "src/cobranca/cobrar.js", "linhas": 1840 }
+    "acima_do_teto": 1,
+    "maior": { "arquivo": "src/cobranca/gigante.js", "linhas": 450 }
   },
   "pendencias": [
-    "A3 → R5: não há script de investigação read-only...",
-    "typecheck reprova hoje (npm run typecheck). Fica FORA do gate de turno...",
-    "V10 → R4: 7 arquivo(s) já passam de 400 linhas (o maior: ..., 1840)..."
+    "A3 → R5: não há script de investigação read-only. O harness instala sem ele; escreva um para a sua stack e o gate de conformidade fecha.",
+    "V10 → R4: 1 arquivo(s) já passam de 400 linhas (o maior: src/cobranca/gigante.js, 450). Entram no baseline e param de crescer; reduzi-los é trabalho à parte, nunca requisito da instalação.",
+    "typecheck reprova hoje (npm run typecheck). Fica FORA do gate de turno pelo mesmo motivo."
   ]
 }
 ```
 
+O bloco `size` acima está abreviado nos campos de varredura: a saída completa
+traz também `targets`, `extensions` e `exclude` — a lista canônica que o gate
+expõe por `--defaults`, para que plano, audit e gate contem os mesmos arquivos.
+
 `size.acima_do_teto` é medido **antes** de escrever qualquer coisa. Não muda a
-instalação — os sete arquivos entram no baseline e param de crescer de qualquer
-forma. Muda a conversa depois dela.
+instalação — o arquivo entra no baseline e para de crescer de qualquer forma.
+Muda a conversa depois dela: num repositório real esse número é dezenas, e é aí
+que a catraca deixa de ser detalhe.
 
 Repare em `gates_hoje`: o typecheck está vermelho, então **fica fora do gate** e
 vira pendência declarada. Ligar gate que reprova trabalho legítimo é o modo de
@@ -231,7 +269,7 @@ A skill mostra o manifesto e **espera o ok**. Pergunta duas coisas:
 ```json
 {
   "fase": "1",
-  "versao": "0.2.1",
+  "versao": "0.2.9",
   "escritos": [
     ".claude/hooks/on-edit.sh", ".claude/hooks/verify.sh",
     ".claude/hooks/guard-prod.sh", ".claude/hooks/cleanup.sh",
@@ -291,19 +329,24 @@ desta fase.
 {
   "fronteira": {
     "baseline": ".harness/baseline.json",
-    "violacoes_congeladas": 2,
+    "violacoes_congeladas": 3,
     "catraca": "ligada: o gate falha só no que é novo",
-    "por_regra": { "sem-ciclos": 1, "sem-orfaos": 1 }
+    "por_regra": { "sem-ciclos": 1, "sem-orfaos": 2 }
   },
   "tamanho": {
     "baseline": ".harness/baseline-size.json",
     "teto": 400,
-    "arquivos_congelados": 7,
-    "maior": { "key": "src/cobranca/cobrar.js", "value": 1840 },
-    "catraca": "ligada: os 7 arquivo(s) acima do teto não podem crescer"
+    "arquivos_congelados": 1,
+    "maior": { "key": "src/cobranca/gigante.js", "value": 450 },
+    "catraca": "ligada: os 1 arquivo(s) acima do teto não podem crescer"
   }
 }
 ```
+
+Três violações de fronteira, e o audit da §3.3 tinha achado duas: o god file
+plantado para exercitar a catraca de tamanho **também** é órfão, porque ninguém o
+importa. É o grafo real respondendo, não um número escolhido — e é exatamente o
+tipo de efeito colateral que só aparece medindo.
 
 São duas catracas com semânticas diferentes de propósito. O baseline de
 fronteira é do harness, em formato próprio — não o mecanismo nativo da
@@ -311,8 +354,9 @@ ferramenta (V8) — e a pergunta é **presença**:
 
 ```json
 [
-  { "origem": "src/comum/data.js",     "destino": "src/comum/data.js",           "regra": "sem-orfaos" },
-  { "origem": "src/cobranca/cobrar.js","destino": "src/faturamento/faturar.js",  "regra": "sem-ciclos" }
+  { "origem": "src/cobranca/gigante.js", "destino": "src/cobranca/gigante.js",     "regra": "sem-orfaos" },
+  { "origem": "src/comum/data.js",       "destino": "src/comum/data.js",           "regra": "sem-orfaos" },
+  { "origem": "src/cobranca/cobrar.js",  "destino": "src/faturamento/faturar.js",  "regra": "sem-ciclos" }
 ]
 ```
 
@@ -320,7 +364,7 @@ O de tamanho guarda **grandeza**: o arquivo pode continuar existindo, o número 
 que não pode subir.
 
 ```json
-{ "src/cobranca/cobrar.js": 1840, "src/faturamento/faturar.js": 612 }
+{ "src/cobranca/gigante.js": 450 }
 ```
 
 Isso converte "40 erros, gate inútil" em "40 erros parados": a decadência para
@@ -342,6 +386,8 @@ violação é nova.
 
 ```json
 {
+  "fase": "3",
+  "versao": "0.2.9",
   "escritos": [
     ".harness/CLAUDE.md.proposto — o CLAUDE.md atual não é nosso; compare e faça o merge à mão",
     "src/cobranca/CLAUDE.md", "src/comum/CLAUDE.md", "src/faturamento/CLAUDE.md"
@@ -355,7 +401,7 @@ violação é nova.
 Um `CLAUDE.md` por módulo **existente**, com os nomes que os módulos já têm:
 
 ```markdown
-<!-- harness-generated: 0.2.1 sha=1382e8bbf6cead4f -->
+<!-- harness-generated: 0.2.9 sha=1382e8bbf6cead4f -->
 # src/cobranca
 
 <!-- uma linha: o que este módulo faz. Preencha — o gerador não sabe. -->
@@ -391,15 +437,19 @@ Planta uma violação por gate, confirma que cada um reprova, remove. **Gate que
 nunca reprovou não é gate.** Reporta por gate, e só sai 3 quando nenhum dos dois
 pôde ser provado. Se falhar, a instalação **não** está concluída.
 
-A skill encerra dizendo o que **não** instalou: a fase 4 do `PLAN.md` — roster
-onda 1, revisor de mudança e arquiteto — ainda é trabalho manual.
+A skill encerra dizendo o que **não** instalou: no modo A, a fase 4 do `PLAN.md`
+inteira — o roster da onda 1, revisor de mudança e arquiteto, é trabalho manual.
+No modo B a conta é diferente: o template traz `.claude/agents/architect.md`, e o
+scaffold o copia, então projeto novo sai com **metade** da onda 1 — falta o
+revisor de mudança. Nos dois casos a skill diz qual metade falta, em vez de
+deixar como omissão.
 
 ---
 
 ## 6. Instalar — modo B, projeto novo
 
 Quando não há código-fonte, o `plan-install.sh` devolve `"modo": "scaffold"` e a
-skill copia o template — quatro camadas com fronteiras já verificáveis.
+skill copia o template — quatro módulos mais `shared`, com fronteiras já verificáveis.
 
 **Pergunte os nomes dos módulos antes de copiar.** Em lote, com um default para
 cada um, e com o bloco inteiro pulável: "mantém os nomes do template" é resposta
@@ -413,7 +463,9 @@ válida.
 ```json
 {
   "modo": "scaffold",
-  "copiados": 36,
+  "versao": "0.2.9",
+  "copiados": 33,
+  "pulados": [],
   "renomeados": [
     "modules/shared → modules/comum",
     "modules/domain → modules/cobranca",
@@ -423,7 +475,9 @@ válida.
   ],
   "residuo_de_prosa": [
     ".dependency-cruiser.js:15:      name: \"domain-e-puro\",",
-    "modules/ui/src/pay-button.ts:3:/** web só conhece o contrato. ...",
+    ".dependency-cruiser.js:18:        \"domain só conhece shared e a si mesmo. I/O sai por domain/ports.\",",
+    "…21 entradas no total — a lista completa sai em ./scripts/capture-usage.sh 6",
+    "modules/ui/src/pay-button.ts:3:/** web só conhece o contrato. Não sabe o que \"payable\" significa. */",
     "ops/env.prd.sh:6:export ECS_SERVICE=\"api-prd\""
   ],
   "proximo_passo": "rode smoke-test.sh: gate que nunca reprovou não é gate (V9 → R3)"
@@ -435,9 +489,10 @@ passada** — inclusive dentro de alternações de regex, para que nenhuma regra
 sobre apontando para módulo que não existe mais.
 
 `residuo_de_prosa` é o que sobrou em comentário, nome de regra e variável de
-ambiente. O script não adivinha prosa: **varra a lista à mão.** Nome de regra
-como `domain-e-puro` continua válido — só está falando de um módulo que agora se
-chama `cobranca`.
+ambiente — 21 entradas nesta renomeação, e o bloco acima mostra quatro delas com
+a linha do meio dizendo que está cortado. O script não adivinha prosa: **varra a
+lista à mão.** Nome de regra como `domain-e-puro` continua válido — só está
+falando de um módulo que agora se chama `cobranca`.
 
 O script **recusa rodar onde já há código-fonte**. Havendo, é modo A.
 
@@ -464,25 +519,55 @@ Depois, nesta ordem:
 .claude/hooks/cleanup.sh       fim de sessão
 .claude/commands/              plan, review, ship
 .harness/harness.json          dono, teto de autonomia, gates ligados, alvos
-.harness/baseline.json         as violações congeladas
-.harness/gate-boundaries.sh    o gate, invocável à mão (D5)
+.harness/baseline.json         fronteira: as violações congeladas
+.harness/baseline-size.json    tamanho: {caminho: linhas}, o número que não sobe
+.harness/gate-boundaries.sh    o gate de fronteira, invocável à mão (D5)
+.harness/gate-size.sh          o gate de tamanho, idem — e sem adaptador
 .harness/adapters/node.sh      o adaptador, dentro do repo (D1 → R8)
 .dependency-cruiser.cjs        a config de fronteira
 <módulo>/CLAUDE.md             um por módulo existente
 ```
 
+São **dois gates e dois baselines**, e os quatro arquivos estão nesta lista de
+propósito: uma versão desta página listava só os de fronteira, e o gate de
+tamanho — o único que vale em stack sem adaptador — desaparecia justamente para
+quem mais precisa dele.
+
 `.harness/harness.json` é o registro do que foi decidido:
 
 ```json
 {
-  "harness_version": "0.2.1",
+  "harness_version": "0.2.9",
   "owner": "Flavio Magacho",
   "autonomy_ceiling": "supervisionado",
-  "gates": { "boundaries": true, "lint": "npm run lint", "typecheck": null }
+  "anti_loop_tries": 3,
+  "formatter": null,
+  "boundary": {
+    "adapter": "node",
+    "config": ".dependency-cruiser.cjs",
+    "targets": ["src"]
+  },
+  "size": {
+    "ceiling": 400,
+    "targets": ["src"],
+    "extensions": ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs",
+                   "py", "go", "java", "kt", "rb", "rs", "php", "cs", "sh"],
+    "exclude": ["*.d.ts", "*.generated.*", "*.min.js", "*.pb.go",
+                "*_pb2.py", "*.snap", "*-lock.json"]
+  },
+  "gates": {
+    "boundaries": true,
+    "size": true,
+    "lint": "npm run lint",
+    "typecheck": null
+  }
 }
 ```
 
 `"typecheck": null` é a pendência declarada da §5.0 — visível, não esquecida.
+`anti_loop_tries` é o teto de V5, e `size.extensions`/`size.exclude` são a lista
+canônica de varredura: existe uma só, exposta pelo gate em `--defaults`, para que
+plano, audit e gate nunca contem coisas diferentes.
 
 ---
 
@@ -502,7 +587,8 @@ Não adicione ao baseline para passar: o baseline só encolhe (V7).
 Se a regra está errada, discuta antes — alterar fronteira exige ADR.
 ```
 
-Código 1. As duas violações antigas continuam congeladas e **não** reprovam.
+Código 1. As três violações antigas do baseline da §5.2 continuam congeladas e
+**não** reprovam: o gate relata uma, que é a que a sessão introduziu.
 
 Quando alguém resolve uma violação antiga, aperte a catraca:
 
@@ -522,10 +608,13 @@ gate de fronteira**, com a lacuna dita em voz alta:
 {
   "boundary": {
     "adapter": null,
-    "reason": "stack python: gate de fronteira não implementado (import-linter)"
+    "reason": "stack python: gate de fronteira não implementado (import-linter)",
+    "config": "",
+    "targets": []
   },
   "pendencias": [
-    "D4 → R10: stack python: gate de fronteira não implementado (import-linter). Todo o resto instala; o gate de fronteira NÃO fica disponível."
+    "A3 → R5: não há script de investigação read-only. O harness instala sem ele; escreva um para a sua stack e o gate de conformidade fecha.",
+    "D4 → R10: stack python: gate de fronteira não implementado (import-linter). Todo o resto instala; o gate de fronteira NÃO fica disponível. A catraca de TAMANHO não depende de adaptador e fica ativa mesmo assim."
   ]
 }
 ```
@@ -542,7 +631,16 @@ já foi customizado à mão:
 
 ```json
 {
-  "escritos": [ "...", ".claude/settings.json (merge)" ],
+  "fase": "1",
+  "versao": "0.2.9",
+  "escritos": [
+    ".claude/hooks/on-edit.sh", ".claude/hooks/verify.sh",
+    ".claude/hooks/guard-prod.sh", ".claude/hooks/cleanup.sh",
+    ".claude/commands/ship.md",
+    ".harness/gate-boundaries.sh", ".harness/gate-size.sh",
+    ".harness/adapters/node.sh", ".harness/harness.json",
+    ".claude/settings.json (merge)"
+  ],
   "pulados": [
     ".claude/commands/plan.md — já existe; comando do projeto manda",
     ".claude/commands/review.md — já existe; comando do projeto manda",
@@ -551,12 +649,16 @@ já foi customizado à mão:
 }
 ```
 
+Hook e gate reaparecem em `escritos` porque o hash confere: são nossos e da mesma
+versão, então reescrever é operação nula. `ship.md` é regerado sempre — ele cita
+os comandos que **existem**, e essa lista pode ter mudado desde a última rodada.
+
 Arquivo que você editou **nunca** é sobrescrito, e o pulo é relatado — não
 silenciado (D3 → R10). O dono já registrado também não é trocado por argumento
 de linha de comando: passar `--owner "Outra Pessoa"` na segunda rodada não muda
 `harness.json`.
 
-Arquivos gerados carregam marca de versão e hash (`harness-generated: 0.2.1
+Arquivos gerados carregam marca de versão e hash (`harness-generated: 0.2.9
 sha=…`). É assim que a próxima versão sabe o que é dela e o que é seu.
 
 ---

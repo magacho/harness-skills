@@ -244,7 +244,7 @@ preenchidos por quem adota:
 | Ferramenta de fronteira | conforme a stack | config de verificação |
 | Ritmo da catraca | combinado com o time | acordo de sprint |
 | Critérios para subir de autonomia | template de §5 | arquivo versionado |
-| Papéis de agente ativos | roster mínimo | `.claude/agents/` |
+| Papéis de agente ativos | onda 1 | `.claude/agents/` |
 
 **O dono é obrigatório e é o único item sem default.** Todo modo de fracasso da
 §11 é um evento que precisa de alguém para reagir: a catraca que parou de

@@ -214,6 +214,43 @@ orphans=$(grep -cE '^\*\*[A-Z][0-9]+ — ' docs/HARNESS.md)
 traced=$(grep -cE '`→ R' docs/HARNESS.md)
 [[ $traced -ge $orphans ]] || err "há regras sem R correspondente ($traced/$orphans)"
 
+# C4 aplicada aos DOCUMENTOS, não só às skills. As cinco divergências abaixo
+# existiram todas ao mesmo tempo e nenhuma reprovava nada: o README anunciava 45
+# regras num HARNESS de 56, a tabela de evals tinha 12 de 13 casos (faltava
+# justamente o de segurança), o USAGE publicava marca de versão de quatro
+# releases atrás, e a versão morava em quatro arquivos que podiam divergir.
+# Afirmação verificável sobre o próprio repositório é a classe de defeito que
+# este produto cobra dos outros.
+echo "→ a versão é a mesma nos quatro lugares onde ela mora"
+v=$(jq -r '.version' plugin/.claude-plugin/plugin.json)
+[[ -n "$v" && "$v" != null ]] || err "plugin.json sem versão"
+[[ "$(jq -r '.metadata.version' .claude-plugin/marketplace.json)" == "$v" ]] \
+  || err "marketplace.json divergiu de plugin.json ($v)"
+for f in plugin/skills/install/scripts/gen-config.sh plugin/skills/install/scripts/scaffold.sh; do
+  grep -q "^VERSION=\"$v\"\$" "$f" \
+    || err "$f não está em $v — arquivo gerado sairia com marca de versão errada (D3)"
+done
+
+echo "→ o README conta as regras que o HARNESS tem"
+declaradas=$(grep -oE '^ *docs/HARNESS\.md +regras — ([0-9]+) regras' README.md \
+  | grep -oE '[0-9]+' | head -1)
+[[ -n "$declaradas" ]] || err "README não declara mais quantas regras o HARNESS tem"
+[[ "$declaradas" == "$orphans" ]] \
+  || err "README diz $declaradas regras; HARNESS.md tem $orphans"
+
+echo "→ a tabela de evals lista todos os casos"
+while IFS= read -r c; do
+  grep -q "\`$c\`" evals/README.md \
+    || err "evals/README.md não lista o caso $c"
+done < <(basename -s .sh -a evals/cases/*.sh)
+
+echo "→ o USAGE publica saída da versão atual, não de quatro releases atrás"
+[[ -x scripts/capture-usage.sh ]] || err "capture-usage.sh ausente: recapturar volta a ser trabalho manual"
+while IFS= read -r stale; do
+  err "docs/USAGE.md publica marca de versão $stale — rode ./scripts/capture-usage.sh (atual: $v)"
+done < <(grep -ohE '(harness-generated: |"versao": "|"harness_version": ")[0-9]+\.[0-9]+\.[0-9]+' docs/USAGE.md \
+  | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u | grep -vFx "$v")
+
 echo
 [[ $fail -eq 0 ]] && echo "OK — pronto para release" || echo "Corrija antes de publicar."
 exit $fail

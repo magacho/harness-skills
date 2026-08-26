@@ -8,7 +8,7 @@ Não cria regra. Se divergir de `HARNESS.md`, o `HARNESS.md` manda. Se divergir 
 código, o código manda e esta página está velha — reverifique com
 `./scripts/validate.sh` e `./evals/run.sh` (§7).
 
-Alinhado a `HARNESS.md` v2.1 · scripts do produto v0.2.8 · esta página v1.1
+Alinhado a `HARNESS.md` v2.1 · scripts do produto v0.2.9 · esta página v1.2
 
 ---
 
@@ -64,12 +64,12 @@ não lê a config de lint do projeto. O critério é o mesmo; a confiança, não
 | 9 | Catraca de tamanho ativa: arquivo acima do teto não cresce `V10 → R4,R7` | `gate-size.sh` conta linha física com `awk 'END{print NR+0}'` (não `wc -l`: arquivo sem newline final ficaria devendo uma linha), baseline `{caminho: linhas}`, comparação `>` por arquivo. Teto 400. Sem ferramenta externa — vale em qualquer stack, inclusive nas que não têm adaptador de fronteira | **D** | `15-audit-dimensao`, `70-catraca-tamanho`; `validate.sh` exige baseline próprio, `--tighten` e recusa que ensina |
 | 10 | Limite de função no linter, de arquivo na catraca — nunca os dois no mesmo lugar `V11 → R4` | `eslint.config.js` traz `max-lines-per-function: 60`, `complexity: 10`, `max-depth: 4`, e **ausência deliberada** de `max-lines`; testes têm as duas primeiras desligadas. No repositório alvo, nada lê a config de lint do projeto | **IA** no alvo, **D** no produto | `validate.sh`: reprova `max-lines` no template e exige `max-lines-per-function` |
 | 11 | Todo gate roda como comando à mão `D5 → R12` | por construção: `gate-boundaries.sh` e `gate-size.sh` têm CLI própria (`--scope`, `--json`, `--tighten`, `--init`, `--rename`) e o hook apenas os invoca (P8). Indiretamente coberto pelo item 1: o `CLAUDE.md` gerado cita `./.harness/gate-*.sh`, e `check-claims.sh` exige que o caminho exista e seja executável | **D** (indireto) | `60`, `70`, `95` invocam os gates fora de qualquer hook |
-| 12 | Escrita em produção negada em permissão **e** em hook `A2 → R5` | `permissions.deny` com 17 padrões (`*deploy*prd*`, `aws * --profile prd*`, `psql *prd*`, `kubectl * --context *prod*`, `git push --force*`, `git tag:*`, `gh release create*`, `Read(./**/.env*)`…) **e** `guard-prod.sh`: deploy por segmento sem exigir ordem, verbo de leitura como válvula (`LEITURA`, num lugar só), `drop`/`truncate` com cliente SQL, e tag decidida **token a token** pelo verbo de escrita — nunca pelo formato do nome, que foi o furo de 0.2.8. A recusa devolve o que fazer em vez disso (A4) | **P** + **D** | `05-guard-prod` (49 testes, nos dois sentidos) prova o bloqueio e prova que a leitura passa; `55-merge-settings` prova que as negações do projeto sobrevivem ao reinstall |
+| 12 | Escrita em produção negada em permissão **e** em hook `A2 → R5` | `permissions.deny` com 17 padrões (`*deploy*prd*`, `aws * --profile prd*`, `psql *prd*`, `kubectl * --context *prod*`, `git push --force*`, `git tag:*`, `gh release create*`, `Read(./**/.env*)`…) **e** `guard-prod.sh`: deploy por segmento sem exigir ordem, verbo de leitura como válvula (`LEITURA`, num lugar só), `drop`/`truncate` com cliente SQL, e tag decidida **token a token** pelo verbo de escrita — nunca pelo formato do nome, que era o furo até 0.2.7 e foi fechado em 0.2.8. A recusa devolve o que fazer em vez disso (A4) | **P** + **D** | `05-guard-prod` (49 testes, nos dois sentidos) prova o bloqueio e prova que a leitura passa; `55-merge-settings` prova que as negações do projeto sobrevivem ao reinstall |
 | 13 | Script de investigação existe e é read-only `A3 → R5` | `plan-install.sh` checa `ops/investigate.sh` e emite **pendência declarada** se faltar; a instalação segue sem ele. "Usar só verbos de leitura" é por construção e revisão | **D** (presença) + **IA** (conteúdo) | `40-plan` (pendências) |
 | 14 | Teto de autonomia declarado; elevá-lo exige revisão `A6,A7 → R5` | `gen-config.sh` valida o enum (`assistido\|supervisionado\|autonomo`) e, na reinstalação, o valor gravado em `.harness/harness.json` **vence a flag de linha de comando**. O teto é sustentado por permissão, nunca por hook (A8): `assistido` **acrescenta** negações (`git commit`, `git push`) e nunca remove. Depois do merge, `perdeu_deny` verifica que nenhuma negação do projeto saiu | **D** | `50-retrofit`, `55-merge-settings` |
 | 15 | Dono registrado `D6 → R6` | `gen-config.sh` e `scaffold.sh` saem com **exit 2** sem `--owner`. Único parâmetro sem default | **D** bloqueante | `validate.sh` exige a checagem nos dois geradores |
 | 16 | Nenhum arquivo do harness contém segredo `A5 → R5` | `deny` de `Read(./.env*)`, `Read(./**/.env*)` e `Read(./**/secrets/**)` — isso impede **ler**, não detecta segredo já escrito. Nenhum script do `audit` varre o repositório alvo | **P** + **✗** | `validate.sh` varre o próprio produto (`AKIA…`, `BEGIN … PRIVATE KEY`) |
-| 17 | Cada subagente declara o que não repete `G3 → R9` | texto de `.claude/agents/architect.md`, lido. A onda 1 do roster (`HARNESS.md` §8) **não é instalada** por `harness:install`, e isso é dito na entrega em vez de ficar como omissão | **IA** | — |
+| 17 | Cada subagente declara o que não repete `G3 → R9` | texto de `.claude/agents/architect.md`, lido. No modo A a onda 1 do roster (`HARNESS.md` §8) **não é instalada**, e isso é dito na entrega em vez de ficar como omissão; no modo B o `architect` vem no template e o revisor de mudança não — metade da onda, declarada como metade | **IA** | — |
 
 ## 4. Os gates no repositório instalado
 
@@ -166,8 +166,9 @@ O que o checklist afirma e a implementação ainda não mede:
 4. **V5 (anti-loop) e V1 (hook silencioso)** são determinísticos no código e não
    têm eval próprio: um `verify.sh` que passasse a falar no caminho verde não
    reprovaria nada hoje.
-5. **G3 (item 17)** depende de leitura, e o roster que ele governa não é instalado
-   pela skill — a conformidade do item fica com quem instalar os subagentes à mão.
+5. **G3 (item 17)** depende de leitura, e o roster que ele governa só é instalado
+   pela metade (o `architect`, e só no modo B) — a conformidade do item fica com
+   quem instalar o resto à mão.
 
 ## 7. Como reverificar
 
@@ -189,6 +190,10 @@ motivo** — a mesma regra D4 que a skill cobra dos outros.
 
 ## Histórico
 
+- **1.2** — item 17 e a lacuna §6.5 param de dizer que o roster não é instalado:
+  o `architect` vem no template do modo B, e "não instalado" era verdade só no
+  modo A. Item 12 datava o furo de tag como sendo de 0.2.8, que é a versão que o
+  fechou.
 - **1.1** — item 12 deixa de ser "nada prova o bloqueio": `05-guard-prod` cobre a
   trava de produção nos dois sentidos. A lacuna §6.2 fecha, e o que resta dela
   passa a ser declarado como limite de alcance do hook, não como ausência de

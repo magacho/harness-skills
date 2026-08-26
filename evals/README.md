@@ -18,6 +18,7 @@ os mesmos).
 
 | caso | prova |
 |---|---|
+| `05-guard-prod` | a dupla trava de produção, nos dois sentidos: bloqueia escrita e libera leitura |
 | `10-audit-contexto` | o audit lê stack, harness existente e afirmações do `CLAUDE.md` (C4) |
 | `15-audit-dimensao` | quantos god files e quantas violações uma catraca congelaria |
 | `20-version` | `/harness:version`: as duas versões e a divergência entre elas |

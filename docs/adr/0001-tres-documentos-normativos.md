@@ -11,6 +11,13 @@ mecanismo que apareceu na conversa.
 Três documentos com dependência unidirecional: `INTENT` (por quê) → `HARNESS`
 (regras) → `PLAN` (como). Toda regra cita o resultado que serve.
 
+## Escopo — o que "três" quer dizer
+Três documentos formam a **cadeia normativa**, e é dela que a ordem fala. Outros
+documentos existem e não a contradizem: `docs/adapters/README.md` é contrato de
+extensão (normativo dentro do seu escopo, e o `validate.sh` o exige presente),
+`CONFORMIDADE.md` é derivado e descritivo — se divergir do `HARNESS.md`, o
+`HARNESS.md` manda — e `USAGE.md` é guia de uso. Nenhum deles cria regra.
+
 ## Consequências
 A rastreabilidade é verificável por script e roda no CI. Duas regras da primeira
 versão não rastreavam a nada e foram rebaixadas a apêndice — eram vocabulário e

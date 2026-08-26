@@ -11,7 +11,7 @@ TypeScript + Node 24, Postgres, deploy em <stg: ECS staging / prd: ECS prod>.
 - `./ops/investigate.sh stg|prd` — investigação read-only
 - `./ops/deploy.sh stg` — deploy de staging
 
-## Arquitetura: quatro módulos, dependência em uma direção
+## Arquitetura: quatro módulos mais `shared`, dependência em uma direção
 
     web ──▶ api/contracts
              api ──▶ domain ◀── data

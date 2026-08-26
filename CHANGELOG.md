@@ -3,6 +3,77 @@
 Skill que modifica repositório alheio sem changelog é impossível de adotar com
 confiança.
 
+## [0.2.9] — 2026-08-26
+
+Revisão da documentação inteira, cruzando cada afirmação verificável com o
+código. Onze divergências, e a mais grave era a página que prega a regra C4
+violando-a: `USAGE.md` declarava que nenhuma saída dela é ilustrativa e publicava
+sete god files e um arquivo de 1840 linhas que nenhuma fixture tinha.
+
+Nenhum comportamento de skill mudou. O que mudou é que essa classe de defeito
+agora reprova no CI.
+
+### Corrigido — afirmação falsa sobre o próprio produto
+- **`USAGE.md`: os blocos de catraca de tamanho mediam um repositório
+  inexistente.** `size.acima_do_teto: 7`, `maior: cobrar.js` com 1840 linhas,
+  baseline `{cobrar.js: 1840, faturar.js: 612}` — o maior arquivo de qualquer
+  fixture tem três linhas. Recapturado do real: um god file de 450 linhas, o
+  mesmo que o eval `70-catraca-tamanho` planta. A prosa em volta media os números
+  inventados e foi reescrita junto
+- **`USAGE.md`: `copiados: 36` no scaffold** — são 33. E `residuo_de_prosa`
+  mostrava 3 de 21 entradas sem dizer que estava cortado
+- **`USAGE.md`: `check-claims.sh` e `detect-stack.sh` com saída de outra versão** —
+  o primeiro prometia `FALSA pnpm build` sobre uma fixture que fala de `lint` e
+  `typecheck`; o segundo trazia 8 campos de um objeto que tem 19
+- **`USAGE.md`: marca de versão `0.2.1` em quatro blocos**, quatro releases atrás
+- **`USAGE.md` §7: o gate de tamanho não estava na lista do que fica no
+  repositório.** Faltavam `gate-size.sh` e `baseline-size.json`, e o
+  `harness.json` de exemplo tinha 4 das 9 chaves. O gate que some da lista é
+  justamente o único que vale em stack sem adaptador
+- **`README.md`: "45 regras"** — o `HARNESS.md` tem 56
+- **`README.md` e `USAGE.md`: instalação apontando para um caminho local.** O
+  texto dizia "enquanto não há repositório remoto definido"; há, com `main` e as
+  tags publicadas. Quem lia o README não conseguia instalar
+- **"O roster da fase 4 não é instalado" era falso no modo B.** O template traz
+  `.claude/agents/architect.md` e o scaffold o copia: projeto novo sai com metade
+  da onda 1. Corrigido em `README`, `install/SKILL.md`, `USAGE.md`, `PLAN.md` e
+  `CONFORMIDADE.md` — agora os dois modos declaram qual metade falta
+- **`evals/README.md`: 12 casos de 13.** Faltava `05-guard-prod`, o caso de
+  segurança que a 0.2.8 adicionou
+- **`PLAN.md` chamava de trilho A o que a skill chama de modo B**, e vice-versa.
+  Os nomes passam a ser os da skill
+- **`PLAN.md` declarava em aberto duas decisões já fechadas:** repositório
+  separado (está no disco, com marketplace e tag próprios) e o formato do arquivo
+  de teto de autonomia (`.harness/harness.json → autonomy_ceiling`). Ficam na
+  tabela com o resultado, não apagadas
+- **`CONFORMIDADE.md` datava o furo de tag como sendo "de 0.2.8"**, que é a
+  versão que o fechou
+- Menores: `PLAN.md` derivava do `HARNESS.md` v2.0 e o v2.1 já estava
+  incorporado; o `README` não listava `docs/adr/`; o `CLAUDE.md` do template
+  dizia "quatro módulos" sobre uma tabela de cinco; `INTENT.md` §9 e
+  `HARNESS.md` §11 davam defaults diferentes para o roster; a ADR 0001 dizia
+  "três documentos" sem delimitar que fala da cadeia normativa
+
+### Adicionado
+- **`scripts/capture-usage.sh`** — recaptura, rodando os scripts de verdade sobre
+  as fixtures, cada bloco de saída que o `USAGE.md` publica.
+  `./scripts/capture-usage.sh 5.2` traz um bloco só. Existe porque a causa do
+  defeito acima não foi descuido: era mais barato inventar o número que
+  reproduzi-lo
+- **Cinco travas em `validate.sh`, aplicando C4 aos documentos** e não só às
+  skills. Reprovam: contagem de regras do `README` divergindo do `HARNESS`; caso
+  de eval fora da tabela do `evals/README`; marca de versão velha no `USAGE`;
+  `marketplace.json` divergindo do `plugin.json`; `VERSION` de gerador atrasado —
+  este último faria arquivo gerado sair com marca errada e nunca mais receber
+  atualização (D3 → R10). As cinco foram verificadas quebrando cada uma de
+  propósito, que é V9 aplicado ao validador
+
+### Alterado
+- O template passa a pedir `dependency-cruiser: ^18`. Estava em `^16` enquanto o
+  adaptador e a config gerada já absorviam os quirks da 18 — diretório nu que não
+  expande para `.ts` e resolução sem extensão. Projeto novo recebia a versão para
+  a qual a correção não foi escrita
+
 ## [0.2.8] — 2026-08-26
 
 Achado por avaliador de código externo num repositório real, no primeiro uso
