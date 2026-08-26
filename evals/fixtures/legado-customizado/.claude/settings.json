@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": ["Bash(pnpm test:*)"],
+    "deny": [
+      "Bash(git tag -a v*)",
+      "Bash(pnpm etl:*)",
+      "Bash(gh workflow run*)",
+      "Read(./**/*key*.json)",
+      "mcp__supabase__apply_migration"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "./scripts/meu-guard.sh" }]
+      }
+    ]
+  },
+  "model": "opus"
+}

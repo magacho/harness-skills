@@ -3,6 +3,54 @@
 Skill que modifica repositório alheio sem changelog é impossível de adotar com
 confiança.
 
+## [0.2.7] — 2026-08-26
+
+### Corrigido
+- **`plan-install.sh` contava artefato de build como código-fonte.** O plano
+  acusava 4 arquivos acima do teto num repositório onde nenhum passava — todos em
+  `.next/`, sequer versionado — e nomeava um deles na pendência V10, recomendando
+  trabalho que não existia. Duas causas independentes: a lista de poda do plano
+  não tinha `.next`, `coverage`, `out` nem `target`, e ele varria a raiz em vez
+  dos `size.targets` que ele mesmo emite. O gate media certo, então o baseline
+  nunca foi contaminado — o defeito era no relatório, que é justamente o que a
+  pessoa lê antes de decidir
+- O mesmo desvio inflava `repo.arquivos_de_codigo` e `arquivos_de_teste`, e com
+  isso podia classificar como `retrofit` um repositório que só tinha artefato de
+  build — quando o certo seria `scaffold`
+
+### Alterado
+- **A varredura de arquivo-fonte virou uma só.** Estava reimplementada em três
+  lugares (`plan-install.sh`, `assets/gate/size.sh`, `audit/size-status.sh`) com
+  listas de poda diferentes, e o scaffold tinha uma quarta cópia do teto e das
+  extensões. Cópia de política divergiu na primeira correção aplicada a um lado
+  só. O gate passou a expor dois modos sem estado, e os outros três chamam:
+  - `gate-size.sh --measure --root D [--targets a,b] [--ext …] [--exclude …]` →
+    `linhas<TAB>caminho` de todo arquivo-fonte
+  - `gate-size.sh --defaults` → teto, extensões, exclusões e poda canônicos
+- A lista de poda canônica ganhou `.next`, `.nuxt`, `.svelte-kit`, `out`,
+  `target`, `.turbo`, `.cache` e `.parcel-cache`
+
+### Adicionado
+- Fixture **`legado-customizado/`** — repositório que já tinha
+  `.claude/settings.json` escrito à mão: cinco negações, um allow, um hook
+  `PreToolUse` próprio e uma chave que o harness não conhece. Cada um é um
+  caminho de perda distinto do defeito de 0.2.5
+- **Eval de idempotência sobre repositório customizado**, na árvore inteira e não
+  só no `settings.json`. É o que o `## Limites` da skill promete, e era
+  exatamente o que o merge violava sem que nada medisse
+- Eval que afirma que **plano, gate e audit contam o mesmo** — a guarda durável
+  não é a lista de poda, é os três consumidores concordarem. O fixture inclui um
+  arquivo grande fora de diretório podado **e** fora dos alvos, para que cada
+  metade do defeito reprove sozinha
+- `validate.sh` reprova lista de poda própria em qualquer consumidor, teto ou
+  extensões copiados fora do gate, e plano que mede sem restringir aos alvos
+
+### Verificado
+- Os dois conjuntos de eval **reprovam contra o código defeituoso**, restaurado
+  de propósito: 8 falhas para o bug do merge, 4 para o do `.next/` (e 2 quando só
+  metade do defeito está presente). Eval que passa contra o bug não está medindo
+  o bug — é a mesma regra V9 que o harness cobra dos outros
+
 ## [0.2.6] — 2026-08-26
 
 ### Corrigido

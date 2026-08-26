@@ -1,0 +1,5 @@
+{
+  "name": "legado-customizado",
+  "private": true,
+  "scripts": { "lint": "node -e \"process.exit(0)\"" }
+}

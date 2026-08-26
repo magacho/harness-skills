@@ -11,6 +11,7 @@
 #
 #   size-status.sh <repo> [--ceiling N]
 set -uo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
 root="${1:-.}"; shift 2>/dev/null || true
 teto=400
 while [[ $# -gt 0 ]]; do
@@ -22,22 +23,12 @@ done
 [[ -d "$root" ]] || { echo "raiz inexistente: $root" >&2; exit 64; }
 root="$(cd "$root" && pwd)"
 
-EXCL=('*.d.ts' '*.generated.*' '*.min.js' '*.pb.go' '*_pb2.py' '*.snap' '*-lock.json')
-
-medidas=$(find "$root" \( -name node_modules -o -name .git -o -name vendor -o -name dist \
-    -o -name build -o -name .venv -o -name __pycache__ -o -name .next -o -name target \
-    -o -name coverage \) -prune -o -type f \
-    \( -name '*.ts' -o -name '*.tsx' -o -name '*.mts' -o -name '*.cts' \
-       -o -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' \
-       -o -name '*.py' -o -name '*.go' -o -name '*.java' -o -name '*.kt' \
-       -o -name '*.rb' -o -name '*.rs' -o -name '*.php' -o -name '*.cs' \
-       -o -name '*.sh' \) -print 2>/dev/null \
-  | while IFS= read -r f; do
-      base="${f##*/}"; pula=0
-      for p in "${EXCL[@]}"; do [[ "$base" == $p ]] && { pula=1; break; }; done
-      [[ $pula -eq 1 ]] && continue
-      printf '%s\t%s\n' "$(awk 'END{print NR+0}' "$f" 2>/dev/null)" "${f#"$root"/}"
-    done)
+# A varredura é do gate de tamanho — o único lugar do harness que decide o que é
+# código e o que é artefato de build. Havia aqui uma terceira cópia da lista de
+# poda, e cópia de política divergiu na primeira correção aplicada a só um lado.
+GATE_SIZE="$here/../../install/assets/gate/size.sh"
+[[ -x "$GATE_SIZE" ]] || { echo "size-status: $GATE_SIZE ausente — a medição é dele." >&2; exit 3; }
+medidas=$("$GATE_SIZE" --measure --root "$root")
 
 if [[ -z "$medidas" ]]; then
   echo "SEM_FONTE: nenhum arquivo de código reconhecido em $root." >&2

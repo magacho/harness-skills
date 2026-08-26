@@ -9,7 +9,7 @@
 # a fronteira de HARNESS.md §1: instalar harness não toca código-fonte.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.6"
+VERSION="0.2.7"
 tpl="$here/../assets/template"
 
 repo=""; owner=""; ceiling="supervisionado"; mapa=""
@@ -105,13 +105,16 @@ bcfg=".dependency-cruiser.js"
 # Em projeto novo o baseline nasce vazio, e aí o teto de tamanho age como
 # limite absoluto — que é o que se pode exigir de greenfield sem custo nenhum.
 # Em legado o mesmo número vira catraca. Um só mecanismo, dois regimes.
-jq -n --arg v "$VERSION" --arg o "$owner" --arg c "$ceiling" --arg bc "$bcfg" '
+# Teto, extensões e exclusões vêm do gate, como no modo A. O template é
+# TypeScript, mas restringir as extensões aqui faria um .py dentro de modules/
+# passar sem ser medido — divergência de política por conveniência.
+sz=$("$root/.harness/gate-size.sh" --defaults)
+jq -n --arg v "$VERSION" --arg o "$owner" --arg c "$ceiling" --arg bc "$bcfg" \
+      --argjson sz "$sz" '
   { harness_version: $v, owner: $o, autonomy_ceiling: $c, anti_loop_tries: 3,
     formatter: "npx --no-install prettier --write",
     boundary: { adapter: "node", config: $bc, targets: ["modules"] },
-    size: { ceiling: 400, targets: ["modules"],
-            extensions: ["ts","tsx","mts","cts","js","jsx","mjs","cjs"],
-            exclude: ["*.d.ts","*.generated.*","*.min.js","*.snap"] },
+    size: ($sz + {targets: ["modules"]}),
     gates: { boundaries: true, size: true,
              lint: "pnpm lint", typecheck: "pnpm typecheck" } }' \
   > "$root/.harness/harness.json"

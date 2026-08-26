@@ -21,13 +21,14 @@ fi
 stack=$(jq -r '.stack' <<<"$stackjson")
 adapter_raw=$(jq -r '.boundary_adapter' <<<"$stackjson")
 
-FIND_PRUNE=( -name node_modules -o -name .git -o -name vendor -o -name dist -o -name build -o -name .venv -o -name __pycache__ )
-srcfiles() {
-  find "$root" \( "${FIND_PRUNE[@]}" \) -prune -o \
-    -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.mjs' \
-               -o -name '*.py' -o -name '*.go' -o -name '*.java' -o -name '*.kt' -o -name '*.rb' \
-               -o -name '*.rs' -o -name '*.php' -o -name '*.cs' \) -print 2>/dev/null
-}
+# Enumeração de arquivo-fonte vem do gate de tamanho, o único lugar do harness
+# que decide o que é código e o que é artefato de build. Havia aqui uma segunda
+# lista de poda, sem `.next`, `coverage`, `out` e `target`: o plano contava
+# artefato como código-fonte, e acusava god file em `.next/`. O mesmo repositório
+# tinha duas respostas, e a errada era a que a pessoa lia antes de decidir.
+GATE_SIZE="$here/../assets/gate/size.sh"
+[[ -x "$GATE_SIZE" ]] || { echo "plan-install: $GATE_SIZE ausente — a medição é dele." >&2; exit 1; }
+srcfiles() { "$GATE_SIZE" --measure --root "$root" | cut -f2-; }
 n_src=$(srcfiles | wc -l | tr -d ' ')
 
 # ---------------------------------------------------------------- modo
@@ -40,8 +41,9 @@ if [[ $n_src -eq 0 ]]; then modo="scaffold"; else modo="retrofit"; fi
 # Nem todo repositório merece. Script de uso único e protótipo descartável
 # pagam a cerimônia e não recebem nada (PLAN.md §7, eval negativo).
 razoes=(); merece=true
-n_test=$(find "$root" \( "${FIND_PRUNE[@]}" \) -prune -o \
-  -type f \( -name '*test*' -o -name '*spec*' -o -name 'test_*' \) -print 2>/dev/null | wc -l | tr -d ' ')
+# Teste é subconjunto do que o gate reconhece como fonte: mesma poda, por
+# construção. Antes contava snapshot em `coverage/` como arquivo de teste.
+n_test=$(srcfiles | grep -icE '(^|/)[^/]*(test|spec)[^/]*$' || true)
 has_ci=$(jq -r '.ci' <<<"$stackjson")
 # Só conta commits se $root for a raiz de um repositório — senão estaríamos
 # lendo o histórico do repositório de cima e reportando número falso.
@@ -116,20 +118,23 @@ fi
 # ele que a pessoa precisa ver para decidir (R10): 3 arquivos acima do teto é
 # uma tarde de trabalho, 300 é uma decisão de roadmap — e nos dois casos a
 # catraca congela e para a decadência hoje (V10 → R4,R7).
-SIZE_TETO=400
-SIZE_EXT=(ts tsx mts cts js jsx mjs cjs py go java kt rb rs php cs sh)
-SIZE_EXCL=('*.d.ts' '*.generated.*' '*.min.js' '*.pb.go' '*_pb2.py' '*.snap' '*-lock.json')
-n_grandes=0; maior_arq=""; maior_n=0
-while IFS= read -r f; do
-  base="${f##*/}"; pula=0
-  for p in "${SIZE_EXCL[@]}"; do [[ "$base" == $p ]] && { pula=1; break; }; done
-  [[ $pula -eq 1 ]] && continue
-  n=$(awk 'END{print NR+0}' "$f" 2>/dev/null) || continue
-  if [[ "$n" -gt $SIZE_TETO ]]; then
-    n_grandes=$((n_grandes+1))
-    [[ "$n" -gt "$maior_n" ]] && { maior_n=$n; maior_arq="${f#"$root"/}"; }
-  fi
-done < <(srcfiles)
+# Teto, extensões e exclusões canônicos vêm do gate: três cópias divergiram uma
+# vez e não vão divergir de novo.
+size_def=$("$GATE_SIZE" --defaults)
+SIZE_TETO=$(jq -r '.ceiling' <<<"$size_def")
+
+# E a medição roda sobre os MESMOS alvos que o gate vai vigiar depois. Varrer a
+# raiz aqui e `targets` lá é como o plano acusava 4 god files num repositório
+# que não tinha nenhum.
+grandes=$("$GATE_SIZE" --measure --root "$root" \
+            --targets "$(IFS=,; echo "${alvos[*]:-.}")" \
+          | awk -F'\t' -v c="$SIZE_TETO" '$1 > c' | sort -rn)
+n_grandes=$(printf '%s' "$grandes" | grep -c . || true)
+maior_n=0; maior_arq=""
+if [[ "$n_grandes" -gt 0 ]]; then
+  maior_n=$(head -1 <<<"$grandes" | cut -f1)
+  maior_arq=$(head -1 <<<"$grandes" | cut -f2-)
+fi
 
 # ------------------------------------------------------------- adaptador
 adapter=null; adapter_reason=""; bcfg=""
@@ -193,9 +198,7 @@ jq -n \
   --arg lint_st "$lint_st" --arg lint_cmd "$lint_cmd" \
   --arg tc_st "$tc_st" --arg tc_cmd "$tc_cmd" \
   --arg formatter "$formatter" \
-  --argjson size_teto "$SIZE_TETO" \
-  --argjson size_ext "$(printf '%s\n' "${SIZE_EXT[@]}" | jq -R . | jq -s .)" \
-  --argjson size_excl "$(printf '%s\n' "${SIZE_EXCL[@]}" | jq -R . | jq -s .)" \
+  --argjson size_def "$size_def" \
   --argjson n_grandes "$n_grandes" \
   --arg maior_arq "$maior_arq" --argjson maior_n "$maior_n" \
   --argjson n_src "$n_src" --argjson n_test "$n_test" --argjson n_commits "${n_commits:-0}" \
@@ -209,8 +212,8 @@ jq -n \
      boundary: { adapter: $adapter, reason: $adapter_reason, config: $bcfg, targets: $alvos },
      gates_hoje: { lint: {estado:$lint_st, comando:$lint_cmd}, typecheck: {estado:$tc_st, comando:$tc_cmd} },
      formatter: $formatter,
-     size: { ceiling: $size_teto, targets: $alvos, extensions: $size_ext,
-             exclude: $size_excl,
+     size: { ceiling: $size_def.ceiling, targets: $alvos,
+             extensions: $size_def.extensions, exclude: $size_def.exclude,
              acima_do_teto: $n_grandes,
              maior: (if $maior_arq == "" then null
                      else {arquivo: $maior_arq, linhas: $maior_n} end) },

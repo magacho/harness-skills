@@ -41,24 +41,29 @@ t "não inventa permissions que ninguém tinha" "m $D/e1.json $D/e2.json | jq -e
 t "projeto sem settings: só o do harness"     "m /dev/null $D/harn.json | jq -e '.permissions.deny == [\"TEMPLATE_X\"]'"
 
 echo "→ install / merge no gerador: recusa em vez de perder"
+# Fixture versionado (legado-customizado/): cinco negações, um allow, um hook
+# PreToolUse próprio e uma chave que o harness não conhece. Cada um é um caminho
+# de perda distinto do defeito que levou 23 negações a 12.
 S=$W/ms-real
-legado_instalado ms-real
-# Reinstalação sobre customização: é o cenário que produziu 23 → 12 negações.
-cat > "$S/.claude/settings.json" <<'J'
-{"permissions":{"allow":["Bash(pnpm test:*)"],
-  "deny":["Bash(git tag -a v*)","Bash(pnpm etl:*)","Bash(gh workflow run*)",
-          "Read(./**/*key*.json)","mcp__supabase__apply_migration"]},
- "hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./scripts/meu-guard.sh"}]}]},
- "model":"opus"}
-J
-$I/gen-config.sh "$S" --plan "$W/ms-real.plan.json" --owner "Dona Eval" --fase 1 > "$W/ms.f1.json" 2>/dev/null
+cp -a "$F/legado-customizado" "$S"
+$I/plan-install.sh "$S" > "$W/ms-real.plan.json" 2>/dev/null
+$I/gen-config.sh "$S" --plan "$W/ms-real.plan.json" --owner "Dona Eval <eval@exemplo>" --fase 1 > "$W/ms.f1.json" 2>/dev/null
 t "as 5 negações do projeto sobrevivem ao reinstall" \
   "jq -e '[.permissions.deny[] | select(test(\"etl|git tag|workflow|[*]key|supabase\"))] | length == 5' $S/.claude/settings.json"
 t "as do harness entraram por cima"     "jq -e '.permissions.deny | length > 10' $S/.claude/settings.json"
+t "a trava de produção do harness está lá (A2)" \
+  "jq -e '[.permissions.deny[] | select(test(\"prd|prod\"))] | length > 0' $S/.claude/settings.json"
+t "o allow do projeto sobrevive"        "jq -e '.permissions.allow | index(\"Bash(pnpm test:*)\")' $S/.claude/settings.json"
 t "o hook do projeto continua lá"       "jq -e '[.hooks.PreToolUse[].hooks[0].command] | index(\"./scripts/meu-guard.sh\")' $S/.claude/settings.json"
 t "e a chave que não é nossa também"    "jq -e '.model == \"opus\"' $S/.claude/settings.json"
-t "reinstalar de novo não muda um byte" \
-  "h=\$(sha256sum $S/.claude/settings.json); $I/gen-config.sh $S --plan $W/ms-real.plan.json --owner 'Dona Eval' --fase 1 >/dev/null 2>&1; [ \"\$h\" = \"\$(sha256sum $S/.claude/settings.json)\" ]"
+
+# Idempotência sobre repositório CUSTOMIZADO, e na árvore inteira — não só no
+# settings.json. É o que o `## Limites` da skill promete, e o que o defeito do
+# merge violava sem que nada medisse.
+h1=$(find "$S" -type f -exec sha256sum {} \; | sort -k2 | sha256sum)
+$I/gen-config.sh "$S" --plan "$W/ms-real.plan.json" --owner "Outro Dono" --fase 1 >/dev/null 2>&1
+h2=$(find "$S" -type f -exec sha256sum {} \; | sort -k2 | sha256sum)
+t "reinstalar sobre customização não altera um byte (D3)" "[ '$h1' = '$h2' ]"
 
 # JSON inválido é o único caminho em que o merge não pode ser feito. Antes o
 # fallback escrevia de qualquer forma; agora recusa, e diz que a garantia não

@@ -20,6 +20,18 @@
 #   .harness/gate-size.sh --init [--force]   grava o baseline inicial (fase 2)
 #   .harness/gate-size.sh --rename a b       move a entrada de um arquivo renomeado
 #
+# E dois modos sem estado, para quem precisa medir ANTES de haver instalação —
+# o plano da instalação e o relatório do audit:
+#
+#   .harness/gate-size.sh --defaults                    teto, extensões e exclusões canônicos
+#   .harness/gate-size.sh --measure --root D [opções]   "linhas<TAB>caminho" de todo arquivo-fonte
+#
+# Estes dois existem porque a varredura estava reimplementada em três lugares —
+# aqui, no plan-install.sh e no size-status.sh — com listas de poda diferentes.
+# O plano acusava god file em `.next/` e `coverage/`, que o gate podava: o mesmo
+# repositório tinha duas respostas, e a errada era a que a pessoa lia antes de
+# decidir. Um scanner, três consumidores.
+#
 # Saída: 0 nada novo · 1 arquivo novo ou que cresceu · 3 gate não configurado
 set -uo pipefail
 
@@ -28,7 +40,17 @@ root="$(dirname "$here")"
 cfgfile="$here/harness.json"
 baseline="$here/baseline-size.json"
 
+# Diretório de artefato de build nunca é código-fonte. Esta lista é a canônica:
+# divergir dela foi o defeito. .next/.nuxt/.svelte-kit/out são de framework web,
+# target de Rust/Java, coverage de relatório de teste.
+PODAR=(node_modules .git dist build out vendor .venv __pycache__ .next .nuxt
+       .svelte-kit target coverage .turbo .cache .parcel-cache)
+EXT_PADRAO=(ts tsx mts cts js jsx mjs cjs py go java kt rb rs php cs sh)
+EXCL_PADRAO=('*.d.ts' '*.generated.*' '*.min.js' '*.pb.go' '*_pb2.py' '*.snap' '*-lock.json')
+TETO_PADRAO=400
+
 scope=""; as_json=0; tighten=0; init=0; force=0; ren_de=""; ren_para=""
+measure=0; defaults=0; opt_root=""; opt_targets=""; opt_ext=""; opt_excl=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --scope) scope="${2:-}"; shift 2 ;;
@@ -37,9 +59,73 @@ while [[ $# -gt 0 ]]; do
     --init) init=1; shift ;;
     --force) force=1; shift ;;
     --rename) ren_de="${2:-}"; ren_para="${3:-}"; shift 3 ;;
+    --measure) measure=1; shift ;;
+    --defaults) defaults=1; shift ;;
+    --root) opt_root="${2:-}"; shift 2 ;;
+    --targets) opt_targets="${2:-}"; shift 2 ;;
+    --ext) opt_ext="${2:-}"; shift 2 ;;
+    --exclude) opt_excl="${2:-}"; shift 2 ;;
     *) echo "argumento desconhecido: $1" >&2; exit 64 ;;
   esac
 done
+
+# Enumeração de arquivo-fonte. Único lugar do harness que decide o que é código
+# e o que é artefato.
+e_fonte() {
+  local rel="$1" base="${rel##*/}" e p achou=1
+  for e in "${exts[@]}"; do [[ "$base" == *."$e" ]] && { achou=0; break; }; done
+  [[ $achou -eq 0 ]] || return 1
+  for p in ${excl[@]+"${excl[@]}"}; do
+    # shellcheck disable=SC2053
+    [[ "$base" == $p || "$rel" == $p ]] && return 1
+  done
+  return 0
+}
+
+# Linha física contada com awk e não com `wc -l`: arquivo sem newline final tem
+# uma linha a menos no wc, e o gate ficaria devendo uma linha justo no arquivo
+# que alguém acabou de tocar.
+medir() {  # medir <raiz> <alvo...> → "linhas<TAB>caminho"
+  local r="$1"; shift
+  local t f rel n poda=()
+  for p in "${PODAR[@]}"; do poda+=(-name "$p" -o); done
+  unset "poda[${#poda[@]}-1]"
+  for t in "$@"; do
+    [[ -e "$r/$t" ]] || continue
+    while IFS= read -r f; do
+      rel="${f#"$r"/}"; rel="${rel#./}"
+      e_fonte "$rel" || continue
+      n=$(awk 'END{print NR+0}' "$f" 2>/dev/null) || continue
+      printf '%s\t%s\n' "$n" "$rel"
+    done < <(find "$r/$t" \( "${poda[@]}" \) -prune -o -type f -print 2>/dev/null)
+  done
+}
+
+csv_para_array() {  # csv_para_array <csv> <nome-do-array>
+  local IFS=','; read -r -a "$2" <<<"$1"
+}
+
+if [[ $defaults -eq 1 ]]; then
+  jq -n --argjson teto "$TETO_PADRAO" \
+    --argjson ext "$(printf '%s\n' "${EXT_PADRAO[@]}" | jq -R . | jq -s .)" \
+    --argjson exc "$(printf '%s\n' "${EXCL_PADRAO[@]}" | jq -R . | jq -s .)" \
+    --argjson pod "$(printf '%s\n' "${PODAR[@]}" | jq -R . | jq -s .)" \
+    '{ceiling: $teto, extensions: $ext, exclude: $exc, prune: $pod}'
+  exit 0
+fi
+
+if [[ $measure -eq 1 ]]; then
+  # Sem config e sem estado: mede a raiz que mandarem. É o que o plano da
+  # instalação e o relatório do audit chamam, para que ninguém reimplemente find.
+  [[ -n "$opt_root" ]] || { echo "--measure exige --root <dir>" >&2; exit 64; }
+  [[ -d "$opt_root" ]] || { echo "--measure: raiz inexistente: $opt_root" >&2; exit 64; }
+  mroot="$(cd "$opt_root" && pwd)"
+  if [[ -n "$opt_ext" ]]; then csv_para_array "$opt_ext" exts; else exts=("${EXT_PADRAO[@]}"); fi
+  if [[ -n "$opt_excl" ]]; then csv_para_array "$opt_excl" excl; else excl=("${EXCL_PADRAO[@]}"); fi
+  if [[ -n "$opt_targets" ]]; then csv_para_array "$opt_targets" mtargets; else mtargets=("."); fi
+  medir "$mroot" "${mtargets[@]}"
+  exit 0
+fi
 
 [[ -f "$cfgfile" ]] || { echo "gate: $cfgfile ausente — o harness não está instalado." >&2; exit 3; }
 
@@ -76,38 +162,10 @@ if [[ -n "$ren_de" ]]; then
 fi
 
 # --- medição ---------------------------------------------------------------
-# Linha física, contada com awk e não com `wc -l`: arquivo sem newline final
-# tem uma linha a menos no wc, e o gate ficaria devendo uma linha justo no
-# arquivo que alguém acabou de tocar.
-e_fonte() {
-  local rel="$1" base="${rel##*/}" e p achou=1
-  for e in "${exts[@]}"; do [[ "$base" == *."$e" ]] && { achou=0; break; }; done
-  [[ $achou -eq 0 ]] || return 1
-  for p in ${excl[@]+"${excl[@]}"}; do
-    # shellcheck disable=SC2053
-    [[ "$base" == $p || "$rel" == $p ]] && return 1
-  done
-  return 0
-}
-
-medir() {
-  local t f rel n
-  for t in "${targets[@]}"; do
-    [[ -e "$root/$t" ]] || continue
-    while IFS= read -r f; do
-      rel="${f#"$root"/}"
-      e_fonte "$rel" || continue
-      n=$(awk 'END{print NR+0}' "$f" 2>/dev/null) || continue
-      [[ "$n" -gt "$teto" ]] && printf '%s\t%s\n' "$rel" "$n"
-    done < <(find "$root/$t" \( -name node_modules -o -name .git -o -name dist \
-              -o -name build -o -name vendor -o -name .venv -o -name __pycache__ \
-              -o -name .next -o -name target -o -name coverage \) -prune \
-              -o -type f -print 2>/dev/null)
-  done
-}
-
-atual=$(medir | jq -R -s 'split("\n") | map(select(length > 0) | split("\t"))
-                          | map({(.[0]): (.[1] | tonumber)}) | add // {}')
+atual=$(medir "$root" "${targets[@]}" \
+        | awk -F'\t' -v c="$teto" '$1 > c {printf "%s\t%s\n", $2, $1}' \
+        | jq -R -s 'split("\n") | map(select(length > 0) | split("\t"))
+                    | map({(.[0]): (.[1] | tonumber)}) | add // {}')
 
 # --- --init: a fase 2 ------------------------------------------------------
 if [[ $init -eq 1 ]]; then

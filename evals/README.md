@@ -50,6 +50,7 @@ defeito que a divisão produziu na primeira tentativa.
 | `repo-vazio/` | modo B, o trilho de greenfield |
 | `nao-merece-harness/` | **eval negativo:** script de uso único. A skill diz não |
 | `ts-com-ciclo/` | **grafo TypeScript** com ciclo, órfão e imports sem extensão |
+| `legado-customizado/` | `.claude/settings.json` escrito à mão: cinco negações, um allow, um hook próprio e uma chave que o harness não conhece. Cada um é um caminho de perda do merge |
 | `depcruise-bruto.json` | saída gravada da ferramenta: `normalize` e catraca rodam offline |
 
 ## O que cada eval de instalação prova
@@ -94,6 +95,20 @@ Três coisas foram travadas por eval, não só a linha:
 
 E `validate.sh` reprova a *família*, não a instância: `.[0]` indexado depois de
 um `*`, `|| jq` como fallback, e a ausência de qualquer uma das duas invariantes.
+
+## O plano que acusava god file em `.next/`
+
+A varredura de arquivo-fonte estava reimplementada em três lugares com listas de
+poda diferentes. O plano acusava 4 arquivos acima do teto num repositório onde
+nenhum passava — todos artefato de build — e a pendência V10 recomendava trabalho
+inexistente. O gate media certo: o mesmo repositório tinha duas respostas, e a
+errada era a que a pessoa lia antes de decidir.
+
+Corrigido em 0.2.7 pela raiz: o gate expõe `--measure` e `--defaults`, e plano,
+audit e scaffold chamam em vez de reimplementar. O eval que trava isso **não**
+verifica a lista de poda — verifica que os três consumidores contam o mesmo. E o
+fixture tem um arquivo grande fora de diretório podado *e* fora dos alvos, para
+que cada metade do defeito reprove sozinha.
 
 ## Regressões travadas
 

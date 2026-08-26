@@ -132,6 +132,28 @@ grep -q 'gate-size.sh' plugin/skills/install/scripts/gen-config.sh \
 grep -q 'gate-size.sh' plugin/skills/install/scripts/scaffold.sh \
   || err "scaffold.sh não instala o gate de tamanho"
 
+echo "→ varredura de arquivo-fonte mora em um lugar só"
+GS=plugin/skills/install/assets/gate/size.sh
+grep -q -- '--measure' $GS || err "o gate não expõe --measure: os consumidores voltam a reimplementar find"
+grep -q -- '--defaults' $GS || err "o gate não expõe --defaults: o teto volta a ser copiado"
+# A causa raiz do bug do `.next/`: cada consumidor tinha a sua lista de poda, e
+# elas divergiram. Poda e extensão canônicas só podem existir aqui.
+for consumidor in plugin/skills/install/scripts/plan-install.sh \
+                  plugin/skills/audit/scripts/size-status.sh; do
+  grep -q -- '--measure' "$consumidor" \
+    || err "$consumidor não mede pelo gate"
+  grep -qE '\-name node_modules|FIND_PRUNE' "$consumidor" \
+    && err "$consumidor tem lista de poda própria — foi assim que o plano acusou god file em .next/"
+done
+[[ $(grep -c 'PODAR=(' $GS) -eq 1 ]] || err "a lista de poda canônica não é única"
+grep -qE 'SIZE_EXT=|SIZE_EXCL=|ceiling: 400' plugin/skills/install/scripts/*.sh \
+  && err "teto ou extensões copiados fora do gate"
+# O plano tem de medir os MESMOS alvos que o gate vai vigiar depois; varrer a
+# raiz aqui e targets lá foi a outra metade do defeito.
+grep -q 'measure --root "$root" \\' plugin/skills/install/scripts/plan-install.sh \
+  && grep -q -- '--targets' plugin/skills/install/scripts/plan-install.sh \
+  || err "plan-install mede sem restringir aos alvos do plano"
+
 echo "→ merge de settings.json: sem fallback silencioso, com invariante travada"
 MS=plugin/skills/install/scripts/merge-settings.jq
 [[ -f $MS ]] || err "merge-settings.jq ausente: o merge voltou para dentro do gerador"
