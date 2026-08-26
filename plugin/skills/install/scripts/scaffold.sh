@@ -9,7 +9,7 @@
 # a fronteira de HARNESS.md §1: instalar harness não toca código-fonte.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.5"
+VERSION="0.2.6"
 tpl="$here/../assets/template"
 
 repo=""; owner=""; ceiling="supervisionado"; mapa=""

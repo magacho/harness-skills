@@ -4,7 +4,17 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      # Node fixado, e não o do runner: os evals cruzam o grafo com
+      # dependency-cruiser, e "a versão que o runner trouxer hoje" é a mesma
+      # classe de verde silencioso que o adaptador recusa (V8 → R12).
+      #
+      # 24 é o LTS ativo (desde 2025-10-28, manutenção até 2028-04-30). O 26 já
+      # existe, mas só entra em LTS em 2026-10-28 — cronograma em
+      # nodejs/Release/schedule.json.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
       - name: instalar jq
         run: sudo apt-get install -y jq
       - name: validar plugin e documentos

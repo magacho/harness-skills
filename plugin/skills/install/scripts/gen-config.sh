@@ -9,7 +9,7 @@
 # próprio conteúdo. Arquivo editado à mão é PULADO, nunca sobrescrito.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.5"
+VERSION="0.2.6"
 
 repo=""; plan=""; owner=""; ceiling="supervisionado"; fase=""
 while [[ $# -gt 0 ]]; do

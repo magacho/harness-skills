@@ -3,6 +3,25 @@
 Skill que modifica repositório alheio sem changelog é impossível de adotar com
 confiança.
 
+## [0.2.6] — 2026-08-26
+
+### Corrigido
+- **O CI rodava sobre Node 20 em fim de vida.** `actions/checkout@v4` ainda
+  targeta o runtime Node 20, e o runner passou a forçar 24 com um aviso de
+  deprecação em cada execução. `checkout` e `setup-node` foram para `@v7`
+- **A versão de Node do CI era a que o runner trouxesse.** Sem `setup-node`, os
+  evals cruzavam o grafo com o `dependency-cruiser` sob uma versão que muda sem
+  aviso — a mesma classe de verde silencioso que o adaptador recusa (V8 → R12).
+  Agora está fixada em **24**, o LTS ativo (desde 2025-10-28, manutenção até
+  2028-04-30). O 26 já existe e ficou de fora de propósito: só entra em LTS em
+  2026-10-28, e o cronograma é `nodejs/Release/schedule.json`
+
+### Alterado
+- Template: `CLAUDE.md` declarava Node 22 e agora declara **24**, e o
+  `package.json` ganhou `engines.node: ">=24"`. A linha de stack do `CLAUDE.md` é
+  instrução, não enfeite (C4 → R1): sem `engines`, ela era a única fonte da
+  afirmação e nada a verificava
+
 ## [0.2.5] — 2026-08-26
 
 ### Corrigido

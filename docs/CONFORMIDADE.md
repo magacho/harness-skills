@@ -8,7 +8,7 @@ Não cria regra. Se divergir de `HARNESS.md`, o `HARNESS.md` manda. Se divergir 
 código, o código manda e esta página está velha — reverifique com
 `./scripts/validate.sh` e `./evals/run.sh` (§7).
 
-Alinhado a `HARNESS.md` v2.1 · scripts do produto v0.2.5
+Alinhado a `HARNESS.md` v2.1 · scripts do produto v0.2.6
 
 ---
 

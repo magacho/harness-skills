@@ -1,6 +1,6 @@
 # <NOME DO PROJETO>
 
-TypeScript + Node 22, Postgres, deploy em <stg: ECS staging / prd: ECS prod>.
+TypeScript + Node 24, Postgres, deploy em <stg: ECS staging / prd: ECS prod>.
 
 ## Comandos
 - `pnpm test` — vitest

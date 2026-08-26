@@ -1,6 +1,9 @@
 {
   "name": "harness-template",
   "private": true,
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint modules",
