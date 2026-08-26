@@ -77,7 +77,7 @@ qualquer refactor.
 
 ## Status
 
-`0.2.2` — diagnostica e instala.
+`0.2.3` — diagnostica e instala.
 
 | | disponível |
 |---|---|

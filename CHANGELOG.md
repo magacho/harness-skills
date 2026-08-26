@@ -3,6 +3,24 @@
 Skill que modifica repositório alheio sem changelog é impossível de adotar com
 confiança.
 
+## [0.2.3] — 2026-08-26
+
+### Corrigido
+- `/harness:version` **não mostrava a saída**. O comando pedia ao modelo que
+  rodasse o script e colasse o resultado — execução por instrução, que depende
+  de o modelo decidir obedecer, e às vezes ele resume em vez de repetir. Agora
+  usa injeção dinâmica (`` !`comando` ``): o Claude Code executa o script e
+  substitui a linha pela saída **antes** de o conteúdo chegar ao modelo, então
+  o resultado já está em contexto sem chamada de ferramenta. O que era pedido
+  virou mecanismo
+- `allowed-tools` passou a declarar a regra exata do script
+  (`Bash(${CLAUDE_PLUGIN_ROOT}/scripts/harness-version.sh *)`) em vez de `Bash`
+  genérico: casa com o comando injetado e roda sem prompt de permissão
+- `validate.sh` confere que todo comando com injeção dinâmica tem regra
+  `allowed-tools` que casa com o comando real. Sem a regra o usuário leva prompt
+  e a injeção deixa de ser determinística — degrada de volta para "o modelo
+  decide rodar", que era o defeito
+
 ## [0.2.2] — 2026-08-26
 
 ### Adicionado

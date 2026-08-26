@@ -1,6 +1,6 @@
 {
   "name": "harness",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Auditoria e instalação de harness de desenvolvimento agêntico: contexto, verificação, permissões e fronteiras de módulo verificáveis.",
   "author": { "name": "Flavio Magacho", "email": "flavio.magacho@bemobi.com" },
   "license": "MIT"

@@ -45,6 +45,20 @@ for c in plugin/commands/*.md; do
   done < <(grep -oE '\$\{CLAUDE_PLUGIN_ROOT\}/[a-zA-Z0-9._/-]+' "$c" | sort -u)
 done
 
+echo "→ comando com injeção dinâmica tem permissão que casa"
+# Comando que injeta saída com !`cmd` precisa de uma regra allowed-tools que
+# case com o comando real; sem ela o usuário leva prompt de permissão e a
+# injeção deixa de ser determinística — degrada para "o modelo decide rodar",
+# que foi o defeito original.
+for c in plugin/commands/*.md; do
+  [[ -e "$c" ]] || continue
+  while read -r cmd; do
+    bin=${cmd%% *}; bin=${bin#\"}; bin=${bin%\"}
+    grep -q "Bash(${bin}" "$c" \
+      || err "$c injeta '${bin}' sem regra allowed-tools correspondente"
+  done < <(sed -n 's/^!`\(.*\)`$/\1/p' "$c")
+done
+
 echo "→ caminhos citados nas skills existem"
 for s in plugin/skills/*/SKILL.md; do
   d=$(dirname "$s")
