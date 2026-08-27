@@ -9,7 +9,7 @@
 # próprio conteúdo. Arquivo editado à mão é PULADO, nunca sobrescrito.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.9"
+VERSION="0.3.0"
 
 repo=""; plan=""; owner=""; ceiling="supervisionado"; fase=""
 while [[ $# -gt 0 ]]; do
@@ -36,7 +36,7 @@ fi
 case "$ceiling" in assistido|supervisionado|autonomo) ;;
   *) echo "teto inválido: $ceiling (assistido|supervisionado|autonomo)" >&2; exit 64 ;; esac
 
-escritos=(); pulados=()
+escritos=(); pulados=(); telemetria=()
 
 # --- marca de versão -------------------------------------------------------
 # O hash é do corpo sem a linha de marca. Se o hash do arquivo em disco bate
@@ -89,6 +89,10 @@ formatter=$(jq -r '.formatter // empty' "$plan")
 mapfile -t targets < <(jq -r '.boundary.targets[]?' "$plan")
 mapfile -t modulos < <(jq -r '.modulos[]?' "$plan")
 size_cfg=$(jq -c '.size // empty | del(.acima_do_teto, .maior)' "$plan")
+# V12 → R6: default explícito e ligado. Telemetria que precisa ser escolhida
+# nunca é escolhida, e o repositório fica sem trilha justamente enquanto o
+# harness é novo — que é quando "isto está pegando alguma coisa?" mais importa.
+telemetry='{"enabled": true, "retention_months": 6}'
 lint_cmd=$(jq -r 'if .gates_hoje.lint.estado=="verde" then .gates_hoje.lint.comando else empty end' "$plan")
 tc_cmd=$(jq -r 'if .gates_hoje.typecheck.estado=="verde" then .gates_hoje.typecheck.comando else empty end' "$plan")
 
@@ -101,6 +105,10 @@ if [[ -f "$root/.harness/harness.json" ]]; then
   [[ -n "$prev" ]] && owner="$prev"
   prev=$(jq -r '.autonomy_ceiling // empty' "$root/.harness/harness.json")
   [[ -n "$prev" ]] && ceiling="$prev"
+  # Mesma razão: quem desligou a telemetria escrevendo `enabled: false` no
+  # arquivo versionado não pode tê-la religada por rodar a instalação de novo.
+  prev=$(jq -c '.telemetry // empty' "$root/.harness/harness.json")
+  [[ -n "$prev" ]] && telemetry="$prev"
 fi
 
 # ===========================================================================
@@ -108,11 +116,35 @@ fi
 # ===========================================================================
 if [[ "$fase" == 1 ]]; then
 
+  # A telemetria e o leitor entram ANTES dos hooks: um hook instrumentado que
+  # source um `.harness/log.sh` inexistente degrada para no-op silencioso, mas
+  # não há razão para deixá-lo assim por uma ordem de escrita.
+  copy_marked "$here/../assets/telemetry/log.sh" ".harness/log.sh" "#"
+  copy_marked "$here/../assets/telemetry/stats.sh" ".harness/stats.sh" "#"
+
+  telemetria=()
   for h in on-edit verify guard-prod cleanup; do
+    antes=${#pulados[@]}
     copy_marked "$here/../assets/retrofit/hooks/$h.sh" ".claude/hooks/$h.sh" "#"
+    # `cleanup.sh` fica de fora de propósito. Ele apaga rastro de SESSÃO; a
+    # trilha é persistente por definição e não pertence a esse ciclo de vida.
+    [[ "$h" == cleanup ]] && continue
+    # Reescrito por inteiro (o sha batia) já sai instrumentado. Só o que foi
+    # PULADO — editado à mão depois de gerado — precisa do enxerto, e perder
+    # uma regra `deny` local para ganhar estatística seria péssimo negócio.
+    if [[ ${#pulados[@]} -gt $antes ]]; then
+      # Sem `|| jq` colado no comando: essa forma é a que escondeu uma falha de
+      # merge inteira na 0.2.5, e o validador reprova a família, não a instância.
+      enxerto=$("$here/instrument-hook.sh" "$root" "$h" 2>/dev/null) || enxerto=""
+      if [[ -z "$enxerto" ]]; then
+        enxerto=$(jq -n --arg h "$h" \
+          '{hook: ("\($h).sh"), acao: "nao-instrumentado", detalhe: "o enxerto falhou"}')
+      fi
+      telemetria+=("$enxerto")
+    fi
   done
   mkdir -p "$root/.claude/commands"
-  for c in plan review; do
+  for c in plan review stats; do
     if [[ -e "$root/.claude/commands/$c.md" ]]; then
       pulados+=(".claude/commands/$c.md — já existe; comando do projeto manda")
     else
@@ -150,6 +182,22 @@ SHIP
   } > "$root/.claude/commands/ship.md"
   escritos+=(".claude/commands/ship.md")
 
+  # A trilha é local: dado de máquina, não de repositório. Versioná-la geraria
+  # conflito em todo merge e publicaria quais arquivos cada pessoa tocou.
+  #
+  # E ela se ignora DE DENTRO de `.harness/`, com um `.gitignore` próprio, em vez
+  # de acrescentar uma linha ao `.gitignore` da raiz. O motivo é a fronteira de
+  # HARNESS.md §1: instalar harness escreve em `CLAUDE.md`, `.claude/**`, config
+  # de verificação, `docs/adr/**` e `ops/**` — e o `.gitignore` da raiz não está
+  # nessa lista. Abrir exceção para uma linha de conveniência é como fronteira
+  # declarada vira fronteira negociável.
+  mkdir -p "$root/.harness/log"
+  if [[ ! -e "$root/.harness/log/.gitignore" ]]; then
+    printf '# trilha de telemetria do harness: local, nunca versionada.\n*\n!.gitignore\n' \
+      > "$root/.harness/log/.gitignore"
+    escritos+=(".harness/log/.gitignore")
+  fi
+
   # gate + adaptador entram no REPOSITÓRIO, não ficam no plugin: quem clona
   # recebe o mesmo comportamento sem ter a skill instalada (D1 → R8, D5 → R12).
   copy_marked "$here/../assets/gate/boundaries.sh" ".harness/gate-boundaries.sh" "#"
@@ -173,7 +221,7 @@ SHIP
   mkdir -p "$root/.harness"
   jq -n --arg v "$VERSION" --arg o "$owner" --arg c "$ceiling" \
         --arg a "$adapter" --arg bc "$bcfg" --arg br "$breason" \
-        --argjson sz "${size_cfg:-null}" \
+        --argjson sz "${size_cfg:-null}" --argjson tel "$telemetry" \
         --arg lint "$lint_cmd" --arg tc "$tc_cmd" --arg fmt "$formatter" \
         --argjson t "$(printf '%s\n' "${targets[@]+"${targets[@]}"}" | jq -R . | jq -s 'map(select(length>0))')" '
     { harness_version: $v,
@@ -184,6 +232,7 @@ SHIP
       boundary: (if $a == "" then {adapter: null, reason: $br}
                  else {adapter: $a, config: $bc, targets: $t} end),
       size: $sz,
+      telemetry: $tel,
       gates: { boundaries: ($a != ""),
                size: ($sz != null),
                lint: (if $lint == "" then null else $lint end),
@@ -212,7 +261,8 @@ SHIP
   extra_deny='[]'
   [[ "$ceiling" == assistido ]] && extra_deny='["Bash(git commit*)","Bash(git push*)"]'
   allow='["Bash(git diff:*)","Bash(git log:*)","Bash(git status:*)",
-    "Bash(./.harness/gate-boundaries.sh:*)","Bash(./.harness/gate-size.sh:*)"]'
+    "Bash(./.harness/gate-boundaries.sh:*)","Bash(./.harness/gate-size.sh:*)",
+    "Bash(./.harness/stats.sh:*)"]'
   [[ -f "$root/ops/investigate.sh" ]] && allow=$(jq -c '. + ["Bash(./ops/investigate.sh:*)"]' <<<"$allow")
 
   hookdef() { jq -n --arg e "$1" --arg m "$2" --arg c "$3" --argjson async "$4" --argjson to "$5" '
@@ -331,6 +381,8 @@ if [[ "$fase" == 3 ]]; then
       echo "- \`./.harness/gate-size.sh\` — tamanho: arquivo acima de $teto linhas não cresce"
       echo "- \`./.harness/gate-size.sh --tighten\` — baixa o baseline dos que encolheram"
     fi
+    # A fase 1 sempre instala o leitor, então esta linha nunca é afirmação falsa.
+    echo "- \`./.harness/stats.sh\` — o que o harness barrou, reprovou e congelou"
     [[ -f "$root/ops/investigate.sh" ]] && echo "- \`./ops/investigate.sh\` — investigação read-only"
     echo
     if [[ ${#modulos[@]} -gt 0 ]]; then
@@ -414,5 +466,6 @@ fi
 # --- relatório -------------------------------------------------------------
 jq -n --argjson e "$(printf '%s\n' "${escritos[@]+"${escritos[@]}"}" | jq -R . | jq -s 'map(select(length>0))')" \
       --argjson p "$(printf '%s\n' "${pulados[@]+"${pulados[@]}"}" | jq -R . | jq -s 'map(select(length>0))')" \
+      --argjson t "$(printf '%s\n' "${telemetria[@]+"${telemetria[@]}"}" | jq -s 'map(select(. != null))' 2>/dev/null || echo '[]')" \
       --arg f "$fase" --arg v "$VERSION" \
-  '{fase: $f, versao: $v, escritos: $e, pulados: $p}'
+  '{fase: $f, versao: $v, escritos: $e, pulados: $p, telemetria: $t}'

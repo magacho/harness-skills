@@ -269,18 +269,21 @@ A skill mostra o manifesto e **espera o ok**. Pergunta duas coisas:
 ```json
 {
   "fase": "1",
-  "versao": "0.2.9",
+  "versao": "0.3.0",
   "escritos": [
+    ".harness/log.sh", ".harness/stats.sh",
     ".claude/hooks/on-edit.sh", ".claude/hooks/verify.sh",
     ".claude/hooks/guard-prod.sh", ".claude/hooks/cleanup.sh",
     ".claude/commands/plan.md", ".claude/commands/review.md",
-    ".claude/commands/ship.md",
+    ".claude/commands/stats.md", ".claude/commands/ship.md",
+    ".harness/log/.gitignore",
     ".harness/gate-boundaries.sh", ".harness/gate-size.sh",
     ".harness/adapters/node.sh",
     ".dependency-cruiser.cjs", ".harness/harness.json",
     ".claude/settings.json"
   ],
-  "pulados": []
+  "pulados": [],
+  "telemetria": []
 }
 ```
 
@@ -294,6 +297,16 @@ gate roda em CI e sob outro agente.
 
 Produção é negada em **dois lugares** — permissão e hook — porque uma só camada
 é contornável (A2 → R5).
+
+`.harness/log.sh` e `.harness/stats.sh` são a **telemetria** (V12 → R6): o
+emissor que os hooks sourceiam, e o leitor da trilha. O campo `telemetria` do
+relatório fica vazio aqui porque nenhum hook precisou de enxerto — todos foram
+escritos do zero. Ele deixa de ser vazio no retrofit da §10.
+
+`.harness/log/.gitignore` faz a trilha se ignorar de dentro de `.harness/`. Não
+tocamos no `.gitignore` da raiz: ele não está na fronteira de escrita de
+`HARNESS.md` §1, e abrir exceção para uma linha de conveniência é como fronteira
+declarada vira fronteira negociável.
 
 **Aceite:** o gate roda, passa hoje, e reprova violação plantada.
 
@@ -387,7 +400,7 @@ violação é nova.
 ```json
 {
   "fase": "3",
-  "versao": "0.2.9",
+  "versao": "0.3.0",
   "escritos": [
     ".harness/CLAUDE.md.proposto — o CLAUDE.md atual não é nosso; compare e faça o merge à mão",
     "src/cobranca/CLAUDE.md", "src/comum/CLAUDE.md", "src/faturamento/CLAUDE.md"
@@ -401,7 +414,7 @@ violação é nova.
 Um `CLAUDE.md` por módulo **existente**, com os nomes que os módulos já têm:
 
 ```markdown
-<!-- harness-generated: 0.2.9 sha=1382e8bbf6cead4f -->
+<!-- harness-generated: 0.3.0 sha=1382e8bbf6cead4f -->
 # src/cobranca
 
 <!-- uma linha: o que este módulo faz. Preencha — o gerador não sabe. -->
@@ -463,8 +476,8 @@ válida.
 ```json
 {
   "modo": "scaffold",
-  "versao": "0.2.9",
-  "copiados": 33,
+  "versao": "0.3.0",
+  "copiados": 35,
   "pulados": [],
   "renomeados": [
     "modules/shared → modules/comum",
@@ -517,12 +530,15 @@ Depois, nesta ordem:
 .claude/hooks/verify.sh        por turno: gates sobre os arquivos da sessão
 .claude/hooks/guard-prod.sh    nega produção também em hook (A2)
 .claude/hooks/cleanup.sh       fim de sessão
-.claude/commands/              plan, review, ship
+.claude/commands/              plan, review, ship, stats
 .harness/harness.json          dono, teto de autonomia, gates ligados, alvos
 .harness/baseline.json         fronteira: as violações congeladas
 .harness/baseline-size.json    tamanho: {caminho: linhas}, o número que não sobe
 .harness/gate-boundaries.sh    o gate de fronteira, invocável à mão (D5)
 .harness/gate-size.sh          o gate de tamanho, idem — e sem adaptador
+.harness/log.sh                o emissor da trilha, sourceado pelos hooks (V12)
+.harness/stats.sh              o leitor da trilha, read-only
+.harness/log/.gitignore        a trilha se ignora de dentro; a raiz não é tocada
 .harness/adapters/node.sh      o adaptador, dentro do repo (D1 → R8)
 .dependency-cruiser.cjs        a config de fronteira
 <módulo>/CLAUDE.md             um por módulo existente
@@ -537,7 +553,7 @@ quem mais precisa dele.
 
 ```json
 {
-  "harness_version": "0.2.9",
+  "harness_version": "0.3.0",
   "owner": "Flavio Magacho",
   "autonomy_ceiling": "supervisionado",
   "anti_loop_tries": 3,
@@ -555,6 +571,10 @@ quem mais precisa dele.
     "exclude": ["*.d.ts", "*.generated.*", "*.min.js", "*.pb.go",
                 "*_pb2.py", "*.snap", "*-lock.json"]
   },
+  "telemetry": {
+    "enabled": true,
+    "retention_months": 6
+  },
   "gates": {
     "boundaries": true,
     "size": true,
@@ -563,6 +583,10 @@ quem mais precisa dele.
   }
 }
 ```
+
+`telemetry.enabled: false` desliga a trilha inteira, e sobrevive a reinstalar:
+desligar é decisão registrada do projeto, nunca efeito colateral de rodar a
+instalação de novo — a mesma regra que protege o dono e o teto de autonomia.
 
 `"typecheck": null` é a pendência declarada da §5.0 — visível, não esquecida.
 `anti_loop_tries` é o teto de V5, e `size.extensions`/`size.exclude` são a lista
@@ -596,6 +620,114 @@ Quando alguém resolve uma violação antiga, aperte a catraca:
     baseline apertado: 0 violação(ões) resolvida(s) removida(s).
 
 Coloque o gate no CI. É o mesmo comando — não há segunda implementação.
+
+### 8.1 A trilha: o que o harness registrou
+
+Cada decisão de hook vira uma linha em `.harness/log/events-AAAA-MM.jsonl`.
+Append-only, rotação mensal pelo nome do arquivo, e nunca versionada:
+
+```json
+{"ts":"2026-08-27T03:55:23Z","sid":"s1","ev":"guard","verdict":"deny","subject":"git tag -a v1.4.0 -m \"release\"","reason":"release"}
+```
+
+Três coisas que o emissor **não** faz, e que valem mais que qualquer evento:
+
+- **não falha.** Todo caminho é engolido. Disco cheio, `jq` ausente ou diretório
+  sem permissão não podem derrubar um hook — muito menos o `PreToolUse`, que
+  decide permissão. Perder uma linha de log é barato; perder a trava de produção
+  não é;
+- **não vaza.** No veredito `allow` entra **só o primeiro token** do comando — o
+  binário. `API_KEY=segredo pnpm build` vira `pnpm`. Argumento carrega
+  credencial, e este hook vê todo comando que o agente tenta rodar. Só no `deny`
+  o comando é gravado, truncado em 200 caracteres;
+- **não fala.** Nada em stdout: o `PostToolUse` é assíncrono e o `PreToolUse` usa
+  stdout como protocolo de decisão.
+
+`cleanup.sh` é o único hook **não** instrumentado, de propósito: ele apaga rastro
+de sessão, e a trilha é persistente por definição.
+
+Para ler:
+
+```
+$ ./.harness/stats.sh
+harness:stats — tel · janela: últimos 30 dias
+trilha: 0 dia(s), desde 2026-08-27T03:55:23Z — MAIS CURTA que a janela pedida
+
+1. BLOQUEIOS DO guard-prod ────────────────────────────────────────
+   3 bloqueio(s). Por motivo:
+     deploy-prod  1
+     drop-truncate  1
+     release  1
+   Os mais recentes:
+     2026-08-27 03:55  drop-truncate  psql -h db -c "TRUNCATE faturas"
+     2026-08-27 03:55  deploy-prod  ./ops/deploy.sh --env prd
+     2026-08-27 03:55  release  git tag -a v1.4.0 -m "release"
+
+2. GATE DE TURNO ──────────────────────────────────────────────────
+   1 execução(ões): 1 passaram, 0 reprovaram, 0 saíram cedo (escopo vazio), 0 liberada(s) pelo anti-loop.
+   Duração mediana das execuções completas: 790 ms
+
+3. ESTADO DA CATRACA ──────────────────────────────────────────────
+   fronteira: 3 entrada(s); não versionado, sem histórico de encolhimento
+   tamanho: 1 entrada(s); não versionado, sem histórico de encolhimento
+
+4. COBERTURA ──────────────────────────────────────────────────────
+   ligados: boundaries, size, lint
+   lacunas: typecheck (desligado), formatter (desligado)
+
+5. ATIVIDADE ──────────────────────────────────────────────────────
+   3 edição(ões) em 2 arquivo(s), 1 sessão(ões).
+     2×  src/comum/moeda.js
+     1×  src/cobranca/cobrar.js
+
+6. MODO DE PERMISSÃO ──────────────────────────────────────────────
+   sem dado: não há transcripts para este repositório em ~/.claude/projects/.
+```
+
+A ordem das seções é a ordem das perguntas do dono, e a primeira é sempre a
+mesma: **o que ele impediu?**
+
+Repare em duas frases que não são enfeite. `MAIS CURTA que a janela pedida` diz
+que os números cobrem menos tempo do que os 30 dias pedidos — sem isso, um zero
+qualquer viraria "nada acontece aqui". E `typecheck (desligado)` aparece como
+**lacuna**: gate que não existe é informação, e a ausência dele no relatório é
+como um gate desligado por engano fica invisível por mais um trimestre.
+
+Outras janelas e saídas:
+
+```bash
+./.harness/stats.sh --since 7d        # 7d, 30d, all, ou YYYY-MM-DD
+./.harness/stats.sh --json            # o mesmo conteúdo, legível por máquina
+./.harness/stats.sh --denies          # só os bloqueios, um por linha
+```
+
+```
+$ ./.harness/stats.sh --denies
+2026-08-27T03:55:23Z  drop-truncate  psql -h db -c "TRUNCATE faturas"
+2026-08-27T03:55:23Z  deploy-prod  ./ops/deploy.sh --env prd
+2026-08-27T03:55:23Z  release  git tag -a v1.4.0 -m "release"
+```
+
+Quando a trilha é mais curta que a janela, o leitor **complementa** com os
+`stop_hook_summary` dos transcripts em `~/.claude/projects/<slug>/*.jsonl` e
+rotula a seção como **reconstruída**, não medida — assim há histórico no dia
+zero, em vez de relatório vazio. Ali só o gate de turno deixa rastro: `guard-prod`
+e `on-edit` são invisíveis nessa fonte, que é exatamente a lacuna que a trilha
+fecha.
+
+Os transcripts também são a única fonte do **modo de permissão**. Quando o
+predominante for `bypassPermissions`, o relatório diz em voz alta que o bloco
+`permissions.allow` do `settings.json` não tem efeito algum — só as negações são
+honradas — e que a dupla trava de produção passa a depender só do hook. Metade da
+configuração de permissão que a instalação escreveu vira decoração enquanto isso
+durar, e hoje ninguém percebe.
+
+O comando `/stats` roda o script e **interpreta**: aponta o gate que nunca
+disparou, a catraca parada e a lacuna de cobertura, sem repetir os números.
+
+Para desligar tudo: `telemetry.enabled: false` em `.harness/harness.json`. O
+leitor passa a dizer isso, em vez de imprimir um relatório vazio que pareceria
+inatividade.
 
 ---
 
@@ -632,8 +764,9 @@ já foi customizado à mão:
 ```json
 {
   "fase": "1",
-  "versao": "0.2.9",
+  "versao": "0.3.0",
   "escritos": [
+    ".harness/log.sh", ".harness/stats.sh",
     ".claude/hooks/on-edit.sh", ".claude/hooks/verify.sh",
     ".claude/hooks/guard-prod.sh", ".claude/hooks/cleanup.sh",
     ".claude/commands/ship.md",
@@ -644,8 +777,10 @@ já foi customizado à mão:
   "pulados": [
     ".claude/commands/plan.md — já existe; comando do projeto manda",
     ".claude/commands/review.md — já existe; comando do projeto manda",
+    ".claude/commands/stats.md — já existe; comando do projeto manda",
     ".dependency-cruiser.cjs — já existe; a config de fronteira do projeto manda"
-  ]
+  ],
+  "telemetria": []
 }
 ```
 
@@ -658,8 +793,38 @@ silenciado (D3 → R10). O dono já registrado também não é trocado por argum
 de linha de comando: passar `--owner "Outra Pessoa"` na segunda rodada não muda
 `harness.json`.
 
-Arquivos gerados carregam marca de versão e hash (`harness-generated: 0.2.9
+Arquivos gerados carregam marca de versão e hash (`harness-generated: 0.3.0
 sha=…`). É assim que a próxima versão sabe o que é dela e o que é seu.
+
+### O hook que você editou, e a telemetria
+
+Há um caso em que a regra "não sobrescrever" e uma feature nova se chocam: a
+`0.3.0` precisa instrumentar os hooks, e `guard-prod.sh` é justamente onde as
+regras específicas do projeto costumam ser acrescentadas à mão. Perder uma regra
+`deny` escrita à mão para ganhar estatística seria um péssimo negócio.
+
+Então quando o hash **não** confere, o hook não é reescrito: a telemetria é
+**enxertada**. O enxerto envolve a função que já está lá — captura a `deny()` do
+projeto com `declare -f` e a chama depois de registrar — sem mover uma linha das
+regras locais. O resultado é validado com `bash -n` antes de substituir o
+arquivo, porque hook quebrado é pior que hook sem trilha.
+
+```json
+"telemetria": [
+  {
+    "hook": "guard-prod.sh",
+    "acao": "instrumentado",
+    "detalhe": "deny() envolvida e allow registrado na saída; regras locais intactas. Sem rótulo de motivo: a assinatura antiga não o carrega"
+  }
+]
+```
+
+Leia o `detalhe`: alguns enxertos vêm com **menos granularidade** e isso é dito,
+não escondido. O `guard-prod` editado à mão registra o bloqueio como
+`nao-rotulado`, porque a assinatura antiga da `deny()` não carrega o motivo — e
+inventar uma categoria a partir do texto da recusa seria pior que admitir a
+lacuna. Quando o enxerto não é possível, a ação vem `nao-instrumentado` com o
+motivo, e o arquivo fica intacto (D4 → R10).
 
 ---
 

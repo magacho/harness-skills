@@ -86,6 +86,20 @@ else
   row "gate de tamanho" "não configurado"
 fi
 
+# Telemetria desligada é exatamente a coisa que fica invisível: o /stats existiria
+# e não teria o que ler. Uma linha aqui evita isso. `// true` não serve — em jq
+# ele devolve true para false.
+if [[ "$(jq -r 'if .telemetry.enabled == false then "off" else "on" end' "$hj" 2>/dev/null)" == off ]]; then
+  row "trilha" "DESLIGADA (telemetry.enabled: false)"
+else
+  n=$(cat "$repo"/.harness/log/events-*.jsonl 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "${n:-0}" -gt 0 ]]; then
+    row "trilha" "$n evento(s) — leia com ./.harness/stats.sh"
+  else
+    row "trilha" "ligada, ainda sem evento"
+  fi
+fi
+
 if [[ "$rv" != "$exec_v" && "$exec_v" != "desconhecida" && "$rv" != "desconhecida" ]]; then
   echo
   echo "  A instalação deste repositório é de outra versão da skill. Rodar"

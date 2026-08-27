@@ -14,9 +14,28 @@
 input=$(cat)
 cmd=$(jq -r '.tool_input.command // ""' <<<"$input")
 
+# V12 → R6: trilha. Este hook era o mais invisível dos quatro — negava sem
+# deixar registro em lugar nenhum, e "o que o harness impediu?" era a pergunta
+# nº 1 do dono sem resposta possível.
+HARNESS_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+HARNESS_SID=$(jq -r '.session_id // "sem-sessao"' <<<"$input")
+export HARNESS_ROOT HARNESS_SID
+# shellcheck source=/dev/null
+source "$HARNESS_ROOT/.harness/log.sh" 2>/dev/null || true
+if ! type harness_log >/dev/null 2>&1; then harness_log() { :; }; harness_bin() { :; }; fi
+
 # A4 → R1: recusa que ensina. Diga o que fazer em vez disso.
+#
+#   deny <rótulo> <texto>
+#
+# O rótulo é curto e estável, para agrupar na estatística: release, tag-push,
+# deploy-prod, prod-write, drop-truncate. Regra acrescentada à mão neste
+# repositório escolhe o seu — `etl`, `workflow`, o que descrever o risco local.
+# O comando inteiro (truncado) entra na trilha só aqui, no deny: no allow entra
+# apenas o binário, porque argumento carrega credencial.
 deny() {
-  jq -n --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",
+  harness_log guard verdict=deny subject="$cmd" reason="$1"
+  jq -n --arg r "$2" '{hookSpecificOutput:{hookEventName:"PreToolUse",
     permissionDecision:"deny", permissionDecisionReason:$r}}'
   exit 0
 }
@@ -37,13 +56,13 @@ while IFS= read -r seg; do
   grep -qiE '(deploy|release|publish)' <<<"$seg" || continue
   grep -qiE '(\b|_)(prd|prod|production)(\b|_)' <<<"$seg" || continue
   grep -qiE "$LEITURA" <<<"$seg" \
-    || deny "Deploy em produção é operação humana. Escreva o plano de release — o que muda, blast radius, rollback, migrations — e entregue ao responsável."
+    || deny deploy-prod "Deploy em produção é operação humana. Escreva o plano de release — o que muda, blast radius, rollback, migrations — e entregue ao responsável."
 done < <(tr '|;&' '\n' <<<"$cmd")
 
 # --- produção read-only ----------------------------------------------------
 if grep -qE '(--profile[[:space:]]+(prd|prod)|PRD_|prod-cluster|\.prd\.|--context[[:space:]]+[^ ]*prod)' <<<"$cmd"; then
   grep -qiE "$LEITURA" <<<"$cmd" \
-    || deny "Comando toca produção e não é leitura. Produção é read-only para você: investigue à vontade, altere nada."
+    || deny prod-write "Comando toca produção e não é leitura. Produção é read-only para você: investigue à vontade, altere nada."
 fi
 
 # --- destruição de dado ----------------------------------------------------
@@ -52,10 +71,10 @@ fi
 # separa isso do `truncate -s 0 app.log` do coreutils, que é trabalho legítimo.
 SQL_CLIENT='\b(psql|mysql|mariadb|sqlite3|clickhouse-client|cockroach|mongosh|redis-cli|pgcli)\b'
 grep -qiE '\b(drop|truncate)[[:space:]]+(table|database|schema)\b' <<<"$cmd" \
-  && deny "DROP/TRUNCATE bloqueado em qualquer ambiente. Crie uma migration."
+  && deny drop-truncate "DROP/TRUNCATE bloqueado em qualquer ambiente. Crie uma migration."
 if grep -qE "$SQL_CLIENT" <<<"$cmd"; then
   grep -qiE '\b(drop|truncate)\b' <<<"$cmd" \
-    && deny "DROP/TRUNCATE bloqueado em qualquer ambiente. Crie uma migration."
+    && deny drop-truncate "DROP/TRUNCATE bloqueado em qualquer ambiente. Crie uma migration."
 fi
 
 # --- tag de release --------------------------------------------------------
@@ -86,11 +105,15 @@ tag_escreve() {
 
 if grep -qE '(^|[;&|]|[[:space:]])git\b[^;&|]*[[:space:]]tag\b' <<<"$cmd"; then
   tag_escreve "$cmd" \
-    && deny "Criar ou apagar tag é operação humana: em muitos projetos a tag dispara o deploy de produção. Diga qual versão você quer publicar e eu preparo as notas. Leitura (git tag --list, --points-at, --contains) está liberada."
+    && deny release "Criar ou apagar tag é operação humana: em muitos projetos a tag dispara o deploy de produção. Diga qual versão você quer publicar e eu preparo as notas. Leitura (git tag --list, --points-at, --contains) está liberada."
 fi
 
 # Empurrar tag já criada dispara o mesmo pipeline.
 grep -qE '(^|[;&|]|[[:space:]])git\b[^;&|]*[[:space:]]push\b[^;&|]*([[:space:]]--tags\b|[[:space:]]--follow-tags\b|refs/tags/)' <<<"$cmd" \
-  && deny "Empurrar tag é o que dispara o pipeline de release. Isso é humano — o commit e o push da branch você pode fazer."
+  && deny tag-push "Empurrar tag é o que dispara o pipeline de release. Isso é humano — o commit e o push da branch você pode fazer."
 
+# Passou por todas as regras. Só o binário vai para a trilha: `git`, `pnpm`,
+# `psql`. Nunca os argumentos — é neles que mora `API_KEY=...`, e este hook vê
+# todo comando que o agente tenta rodar.
+harness_log guard verdict=allow subject="$(harness_bin "$cmd")"
 exit 0

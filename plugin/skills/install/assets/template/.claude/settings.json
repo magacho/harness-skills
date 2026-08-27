@@ -6,6 +6,7 @@
       "Bash(git log:*)",
       "Bash(git status:*)",
       "Bash(./ops/investigate.sh:*)",
+      "Bash(./.harness/stats.sh:*)",
       "Bash(./ops/deploy.sh stg*)"
     ],
     "deny": [

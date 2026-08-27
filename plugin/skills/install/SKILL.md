@@ -70,7 +70,13 @@ stack, inclusive nas que não têm gate de fronteira (V10 → R12). Relate quant
 arquivos já passam do teto — está em `size.acima_do_teto` no plano. Esse número
 não muda a instalação; muda a conversa depois dela.
 
-Três coisas para conferir na saída e relatar:
+Instala junto a **telemetria** (V12 → R6): `.harness/log.sh`, o emissor
+sourceado pelos hooks; `.harness/stats.sh`, o leitor; o comando `/stats`; e
+`.harness/log/` no `.gitignore`. O default é ligado, e `telemetry.enabled: false`
+já registrado no `harness.json` sobrevive à reinstalação — desligar é decisão do
+projeto, nunca efeito colateral de rodar a instalação de novo.
+
+Quatro coisas para conferir na saída e relatar:
 
 - **`pulados`** — arquivo editado à mão nunca é sobrescrito (D3 → R10). Diga
   quais foram e por quê; não insista.
@@ -84,6 +90,14 @@ Três coisas para conferir na saída e relatar:
   fica **fora** do gate e vira pendência declarada. Ligar gate que reprova
   trabalho legítimo é o modo de fracasso nº 1: o time desliga em duas semanas, e
   um gate desligado é pior que nenhum.
+- **`telemetria`** — o que foi feito nos hooks que a regra D3 mandou não
+  sobrescrever. Hook cujo sha batia foi reescrito inteiro e já sai instrumentado;
+  hook editado à mão recebe **enxerto cirúrgico**, que envolve a função existente
+  (`deny`, `fail`) sem mover uma linha das regras locais. Leia o `detalhe` de
+  cada um: alguns enxertos vêm com granularidade menor — `guard-prod` editado à
+  mão registra o bloqueio sem rótulo de motivo, porque a assinatura antiga não o
+  carrega. Perder uma regra `deny` escrita à mão para ganhar estatística seria um
+  péssimo negócio, e a ação `nao-instrumentado` é a regra funcionando.
 - **`pendencias`** — leia em voz alta, uma por uma. Ausência declarada é
   requisito (D4 → R10), não rodapé.
 
@@ -205,5 +219,9 @@ Depois, nesta ordem:
 - **O dono é obrigatório.** Os scripts se recusam a rodar sem ele. Não invente um.
 - **Ausência é declarada em voz alta.** Stack sem adaptador instala todo o resto
   e diz que o gate de fronteira não está disponível. Não abortar, não silenciar.
+  Vale igual para o hook que não pôde ser instrumentado.
+- **A trilha nunca custa uma decisão.** Se o emissor de telemetria falhar, o hook
+  segue: perder uma linha de log é barato, derrubar o `PreToolUse` que decide
+  permissão não é. Não "conserte" isso trocando por um caminho que possa abortar.
 - **Não escreva config à mão.** Se um gerador está errado, conserte o gerador.
 - **Nem todo repositório merece harness.** Diga isso quando for o caso.

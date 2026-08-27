@@ -8,7 +8,7 @@ Não cria regra. Se divergir de `HARNESS.md`, o `HARNESS.md` manda. Se divergir 
 código, o código manda e esta página está velha — reverifique com
 `./scripts/validate.sh` e `./evals/run.sh` (§7).
 
-Alinhado a `HARNESS.md` v2.1 · scripts do produto v0.2.9 · esta página v1.2
+Alinhado a `HARNESS.md` v2.2 · scripts do produto v0.3.0 · esta página v1.3
 
 ---
 
@@ -49,7 +49,7 @@ catraca) é **D no produto** — `validate.sh` reprova se o `eslint.config.js`
 enviado ganhar um `max-lines` — e **IA no repositório alvo**, porque o `audit`
 não lê a config de lint do projeto. O critério é o mesmo; a confiança, não.
 
-## 3. Os 17 critérios de `HARNESS.md` §12
+## 3. Os 19 critérios de `HARNESS.md` §12
 
 | # | critério (regra) | validação no repositório alvo | tipo | prova no produto |
 |---|---|---|---|---|
@@ -69,7 +69,9 @@ não lê a config de lint do projeto. O critério é o mesmo; a confiança, não
 | 14 | Teto de autonomia declarado; elevá-lo exige revisão `A6,A7 → R5` | `gen-config.sh` valida o enum (`assistido\|supervisionado\|autonomo`) e, na reinstalação, o valor gravado em `.harness/harness.json` **vence a flag de linha de comando**. O teto é sustentado por permissão, nunca por hook (A8): `assistido` **acrescenta** negações (`git commit`, `git push`) e nunca remove. Depois do merge, `perdeu_deny` verifica que nenhuma negação do projeto saiu | **D** | `50-retrofit`, `55-merge-settings` |
 | 15 | Dono registrado `D6 → R6` | `gen-config.sh` e `scaffold.sh` saem com **exit 2** sem `--owner`. Único parâmetro sem default | **D** bloqueante | `validate.sh` exige a checagem nos dois geradores |
 | 16 | Nenhum arquivo do harness contém segredo `A5 → R5` | `deny` de `Read(./.env*)`, `Read(./**/.env*)` e `Read(./**/secrets/**)` — isso impede **ler**, não detecta segredo já escrito. Nenhum script do `audit` varre o repositório alvo | **P** + **✗** | `validate.sh` varre o próprio produto (`AKIA…`, `BEGIN … PRIVATE KEY`) |
-| 17 | Cada subagente declara o que não repete `G3 → R9` | texto de `.claude/agents/architect.md`, lido. No modo A a onda 1 do roster (`HARNESS.md` §8) **não é instalada**, e isso é dito na entrega em vez de ficar como omissão; no modo B o `architect` vem no template e o revisor de mudança não — metade da onda, declarada como metade | **IA** | — |
+| 17 | Hook que decide deixa trilha, sem falhar, bloquear ou vazar argumento `V12 → R6` | `.harness/log.sh` é sourceado pelos três hooks que decidem — `guard-prod`, `verify`, `on-edit` — e `cleanup.sh` fica **deliberadamente** fora, porque apaga rastro de sessão. A casca `harness_log() { { … } >/dev/null 2>&1 \|\| true; }` é o que torna "não derruba o hook" estrutural em vez de disciplina; `harness_bin` é o que torna "não vaza" estrutural, gravando só o primeiro token no veredito permissivo, e o truncamento de `subject` mora no emissor, não no chamador — regra de vazamento que depende de cada call site lembrar já vazou | **D** | `75-telemetria`: trilha sem permissão de escrita com o guard ainda negando; `API_KEY=` e senha de URL ausentes do arquivo; stdout vazio no caminho permissivo. `validate.sh` reprova hook que monta JSON por fora do emissor, `cleanup.sh` instrumentado, e a perda da casca |
+| 18 | A estatística distingue zero medido de zero desconhecido `V13 → R6` | `stats.sh` calcula `cobre_a_janela` a partir do primeiro evento da trilha e da janela pedida, e o texto humano tem três saídas diferentes para "0 bloqueios": trilha vazia (*sem dado*), trilha que cobre (*é um fato sobre o repositório*) e trilha curta (*não há dado sobre o resto*). O que vem dos transcripts é rotulado `RECONSTRUÍDO`, e `permissao.allow_efetivo` é `null` — não `true` — quando não há transcript | **D** | `75-telemetria`: os três ramos, e o `null` do modo de permissão desconhecido. `validate.sh` exige `cobre_a_janela` e o rótulo de reconstrução |
+| 19 | Cada subagente declara o que não repete `G3 → R9` | texto de `.claude/agents/architect.md`, lido. No modo A a onda 1 do roster (`HARNESS.md` §8) **não é instalada**, e isso é dito na entrega em vez de ficar como omissão; no modo B o `architect` vem no template e o revisor de mudança não — metade da onda, declarada como metade | **IA** | — |
 
 ## 4. Os gates no repositório instalado
 
@@ -83,6 +85,7 @@ O que efetivamente roda depois da instalação, e sob qual regime:
 | fronteira | fim de turno | `dependency-cruiser`: `sem-ciclos` (error) e `sem-orfaos` (warn) | **presença** — diferença de conjunto sobre `[{origem,destino,regra}]` | sim |
 | tamanho | fim de turno | contagem de linha | **grandeza** — `{caminho: linhas}`, o número não sobe | sim |
 | produção | por tool call | `permissions.deny` + regex do `guard-prod.sh` | — | sim (`permissionDecision: deny`) |
+| trilha | por decisão de hook | nenhum — registra, não julga | — | **nunca**, por desenho (V12) |
 
 **As duas semânticas de catraca são diferentes de propósito.** Fronteira pergunta
 se a violação existe; tamanho pergunta se o número subiu. Um baseline de lista e
@@ -166,9 +169,18 @@ O que o checklist afirma e a implementação ainda não mede:
 4. **V5 (anti-loop) e V1 (hook silencioso)** são determinísticos no código e não
    têm eval próprio: um `verify.sh` que passasse a falar no caminho verde não
    reprovaria nada hoje.
-5. **G3 (item 17)** depende de leitura, e o roster que ele governa só é instalado
+5. **G3 (item 19)** depende de leitura, e o roster que ele governa só é instalado
    pela metade (o `architect`, e só no modo B) — a conformidade do item fica com
    quem instalar o resto à mão.
+6. **A granularidade do hook enxertado (V12, item 17).** Em `guard-prod.sh`
+   editado à mão, o bloqueio entra na trilha sem rótulo de motivo, e em
+   `verify.sh` editado à mão os vereditos `skip` e `released` não são
+   distinguidos de `pass`. Isso é **declarado no relatório de instalação e na
+   própria linha da trilha** (`reason: nao-rotulado`, `reason: sem-granularidade`)
+   em vez de chutado — mas quem for somar `pass` num repositório assim está
+   somando também os turnos que saíram cedo. Fechar depende de o projeto adotar a
+   assinatura nova de `deny()`/`fail()`, que é edição revisada e não coisa que a
+   instalação possa fazer sozinha.
 
 ## 7. Como reverificar
 
@@ -190,6 +202,10 @@ motivo** — a mesma regra D4 que a skill cobra dos outros.
 
 ## Histórico
 
+- **1.3** — itens 17 e 18 (V12 e V13, telemetria) entram na tabela e o roster vira
+  item 19. A §4 ganha a trilha: a única linha da tabela de gates que **nunca**
+  bloqueia, o que é o desenho e não uma limitação. Lacuna §6.6 registra a
+  granularidade menor do hook enxertado.
 - **1.2** — item 17 e a lacuna §6.5 param de dizer que o roster não é instalado:
   o `architect` vem no template do modo B, e "não instalado" era verdade só no
   modo A. Item 12 datava o furo de tag como sendo de 0.2.8, que é a versão que o

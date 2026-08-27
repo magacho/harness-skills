@@ -17,5 +17,7 @@ Extraído de HARNESS.md §12. Verificável, não declarável.
 - [ ] Script de investigação existe e é read-only `A3 → R5`
 - [ ] Teto de autonomia declarado; elevá-lo exige revisão `A6,A7 → R5`
 - [ ] Dono registrado `D6 → R6`
+- [ ] Hook que decide deixa trilha, sem falhar, bloquear ou vazar argumento `V12 → R6`
+- [ ] A estatística distingue zero medido de zero desconhecido `V13 → R6`
 - [ ] Nenhum arquivo do harness contém segredo `A5 → R5`
 - [ ] Cada subagente declara o que não repete `G3 → R9`

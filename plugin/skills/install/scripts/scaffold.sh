@@ -9,7 +9,7 @@
 # a fronteira de HARNESS.md §1: instalar harness não toca código-fonte.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.9"
+VERSION="0.3.0"
 tpl="$here/../assets/template"
 
 repo=""; owner=""; ceiling="supervisionado"; mapa=""
@@ -94,8 +94,12 @@ mkdir -p "$root/.harness/adapters"
 # divergentes de cada um, e só o verify.sh era trocado aqui: o modo B recebia um
 # guard-prod de 27 linhas cuja regra de deploy casava `deploy.sh prd` literal —
 # `./ops/deploy.sh --env prd` passava. Política duplicada divergiu, como sempre.
+# Telemetria: mesma fonte única do modo A. Um harness que protege sem registrar
+# não é auditável, e greenfield é onde a trilha nasce completa desde o dia zero.
 for pair in "$here/../assets/gate/boundaries.sh:.harness/gate-boundaries.sh" \
             "$here/../assets/gate/size.sh:.harness/gate-size.sh" \
+            "$here/../assets/telemetry/log.sh:.harness/log.sh" \
+            "$here/../assets/telemetry/stats.sh:.harness/stats.sh" \
             "$here/adapters/node.sh:.harness/adapters/node.sh" \
             "$here/../assets/retrofit/hooks/on-edit.sh:.claude/hooks/on-edit.sh" \
             "$here/../assets/retrofit/hooks/verify.sh:.claude/hooks/verify.sh" \
@@ -127,6 +131,31 @@ done
 echo '[]' > "$root/.harness/baseline.json"
 echo '{}' > "$root/.harness/baseline-size.json"
 
+# O /stats vem dos assets de retrofit, uma cópia só: o template não tem versão
+# própria dele, e não vai ganhar uma — foi assim que o guard-prod do modo B
+# divergiu e ficou com a trava mais fraca.
+if [[ ! -e "$root/.claude/commands/stats.md" ]]; then
+  mkdir -p "$root/.claude/commands"
+  cp "$here/../assets/retrofit/commands/stats.md" "$root/.claude/commands/stats.md"
+  copiados+=(".claude/commands/stats.md")
+fi
+
+# A trilha se ignora de dentro de `.harness/`, e não pela raiz: o `.gitignore`
+# da raiz não está na fronteira de escrita de HARNESS.md §1. Mesmo mecanismo do
+# modo A, um lugar só.
+mkdir -p "$root/.harness/log"
+printf '# trilha de telemetria do harness: local, nunca versionada.\n*\n!.gitignore\n' \
+  > "$root/.harness/log/.gitignore"
+copiados+=(".harness/log/.gitignore")
+
+# O CLAUDE.md do template não cita `./.harness/stats.sh`: lá o caminho ainda não
+# existe, e comando citado que não existe é instrução falsa (C4 → R1). A linha
+# entra aqui, depois de o leitor estar no disco.
+if [[ -f "$root/CLAUDE.md" ]] && ! grep -q 'harness/stats.sh' "$root/CLAUDE.md"; then
+  sed -i 's|^- `./ops/investigate.sh stg|- `./.harness/stats.sh` — o que o harness barrou, reprovou e congelou\n- `./ops/investigate.sh stg|' \
+    "$root/CLAUDE.md"
+fi
+
 bcfg=".dependency-cruiser.js"
 # Em projeto novo o baseline nasce vazio, e aí o teto de tamanho age como
 # limite absoluto — que é o que se pode exigir de greenfield sem custo nenhum.
@@ -138,6 +167,7 @@ sz=$("$root/.harness/gate-size.sh" --defaults)
 jq -n --arg v "$VERSION" --arg o "$owner" --arg c "$ceiling" --arg bc "$bcfg" \
       --argjson sz "$sz" '
   { harness_version: $v, owner: $o, autonomy_ceiling: $c, anti_loop_tries: 3,
+    telemetry: {enabled: true, retention_months: 6},
     formatter: "npx --no-install prettier --write",
     boundary: { adapter: "node", config: $bc, targets: ["modules"] },
     size: ($sz + {targets: ["modules"]}),
@@ -152,7 +182,8 @@ if [[ -f "$root/.claude/settings.json" ]]; then
   [[ "$ceiling" == assistido ]] && extra='["Bash(git commit*)","Bash(git push*)"]'
   jq --argjson x "$extra" '
     .permissions.allow = ((.permissions.allow // [])
-      + ["Bash(./.harness/gate-boundaries.sh:*)","Bash(./.harness/gate-size.sh:*)"] | unique)
+      + ["Bash(./.harness/gate-boundaries.sh:*)","Bash(./.harness/gate-size.sh:*)",
+         "Bash(./.harness/stats.sh:*)"] | unique)
     | .permissions.deny = ((.permissions.deny // []) + $x | unique)
     | ._harness = {generated: "'"$VERSION"'"}' \
     "$root/.claude/settings.json" > "$root/.claude/settings.json.tmp" \

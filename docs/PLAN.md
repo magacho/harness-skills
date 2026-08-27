@@ -6,7 +6,7 @@ empacotar e publicar isso como produto distribuível.
 Documento **executável e descartável**: quando as fases terminarem, vira
 histórico. As regras duráveis estão no `HARNESS.md`; o porquê, no `INTENT.md`.
 
-Versão 2.2 · Derivado de `INTENT.md` v1.1 e `HARNESS.md` v2.1
+Versão 2.3 · Derivado de `INTENT.md` v1.1 e `HARNESS.md` v2.2
 
 ---
 
@@ -211,6 +211,15 @@ changelog é impossível de adotar com confiança.
 
 **Rollback.** Versão anterior instalável, e o `retrofit` idempotente `D3 → R10` —
 arquivos gerados marcados com versão, customização manual nunca sobrescrita.
+
+**Feature que precisa entrar em arquivo já editado.** Aconteceu na 0.3.0, com a
+telemetria: os três hooks precisavam ser instrumentados, e `guard-prod.sh` é
+justamente onde o projeto adotante acrescenta regras à mão. A saída **não** é
+abrir exceção em D3. É enxertar: o instalador insere um bloco que envolve a
+função existente sem mover uma linha das regras locais, valida o resultado com
+`bash -n` antes de trocar o arquivo, e **declara no relatório** o que fez e com
+que granularidade — inclusive quando não deu, caso em que o arquivo fica intacto.
+Toda feature futura que precise tocar hook segue esse trilho.
 
 ---
 

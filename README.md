@@ -13,6 +13,10 @@ código-fonte.
 E um comando: **`/harness:version`** — que versão da skill está rodando, que
 versão instalou o harness deste repositório, e se as duas divergiram.
 
+O harness instalado ganha o seu: **`/stats`** lê a trilha que os hooks deixam e
+responde o que antes exigia arqueologia — o que o guard barrou, o que o gate
+reprovou, e há quantos dias a catraca não encolhe.
+
 O guia de uso, com a saída real de cada passo, está em
 [`docs/USAGE.md`](docs/USAGE.md).
 
@@ -106,9 +110,30 @@ quer: um módulo de dados com 40 repositórios pequenos é saudável, um domíni
 Responsabilidade dupla continua sendo julgamento, e o lugar dela é o subagente
 `architect`.
 
+## Telemetria
+
+Quatro hooks e dois gates decidem coisas o tempo todo, e até a `0.2.9` nenhum
+deixava rastro: o rastreamento de sessão era apagado no `SessionEnd`, de
+propósito. Quem quisesse saber se o harness estava pegando alguma coisa tinha de
+ler os transcripts da ferramenta — onde só o gate de turno aparece.
+
+A partir da `0.3.0` cada decisão vira uma linha em `.harness/log/events-AAAA-MM.jsonl`
+(append-only, mensal, não versionada), e `./.harness/stats.sh` lê a trilha. O
+emissor tem três regras que valem mais que qualquer evento: **nunca falha**
+— erro dele é engolido, porque derrubar o hook que decide permissão custa mais
+que perder uma linha de log —, **nunca vaza** — no veredito permissivo grava só
+o binário, nunca os argumentos, que carregam `API_KEY=...` — e **nunca fala**,
+porque o `PreToolUse` usa stdout como protocolo de decisão.
+
+E a estatística distingue **zero medido** de **zero desconhecido**: `0 bloqueios`
+com trilha de 30 dias é um fato; com trilha de ontem é ausência de dado, e o
+relatório diz qual dos dois é. Desligável em `.harness/harness.json`
+(`telemetry.enabled: false`), caso em que o leitor diz isso em vez de imprimir
+relatório vazio.
+
 ## Status
 
-`0.2.9` — diagnostica e instala.
+`0.3.0` — diagnostica, instala e registra.
 
 | | disponível |
 |---|---|
@@ -118,6 +143,7 @@ Responsabilidade dupla continua sendo julgamento, e o lugar dela é o subagente
 | Catraca de violações | sim, genérica: a comparação é do harness, não da ferramenta |
 | Fronteiras em JS/TS | sim, via dependency-cruiser |
 | Fronteiras em Python, JVM, Go | não — contrato de adaptador escrito, ausência declarada em voz alta |
+| Telemetria e `/stats` | sim, nos dois modos; retrofit enxerta em hook editado à mão sem sobrescrevê-lo |
 | Roster de subagentes (fase 4) | parcial: o `architect` vem no template do modo B; o revisor de mudança é manual nos dois modos |
 | Piloto de modularização (fases 5–6) | não, e não é escopo do harness |
 
@@ -145,7 +171,7 @@ possível.
       scripts/adapters/     o contrato de adaptador, implementado
     docs/USAGE.md       guia de uso — avaliação, instalação, saídas reais
     docs/INTENT.md      por quê — problema, resultados (R1–R12), o que não queremos
-    docs/HARNESS.md     regras — 56 regras, cada uma rastreando a um resultado
+    docs/HARNESS.md     regras — 58 regras, cada uma rastreando a um resultado
     docs/PLAN.md        como — construção da skill, implantação, deploy
     docs/CONFORMIDADE.md  mapa de validação — cada critério de §12, o mecanismo e o tipo
     docs/adapters/      contrato de adaptador por linguagem

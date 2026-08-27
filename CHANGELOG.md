@@ -3,6 +3,126 @@
 Skill que modifica repositório alheio sem changelog é impossível de adotar com
 confiança.
 
+## [0.3.0] — 2026-08-27
+
+O harness instalava quatro hooks e dois gates, e **nenhum deixava rastro**. O
+`on-edit.sh` gravava em `/tmp/cc-touched-*` e o `cleanup.sh` apagava no
+`SessionEnd`, de propósito. A consequência é que o dono do repositório não
+conseguia responder "o harness está funcionando?" sem arqueologia nos transcripts
+do Claude Code — onde só o hook `Stop` aparece; `guard-prod.sh` e `on-edit.sh`
+eram invisíveis.
+
+Um harness que protege sem registrar não é auditável. E um gate desligado por
+engano se parece exatamente com um gate que nunca precisou reprovar.
+
+### Adicionado — a trilha (V12 → R6)
+- **`.harness/log.sh`** — emissor sourceado pelos três hooks que decidem. Uma
+  linha JSON por evento em `.harness/log/events-AAAA-MM.jsonl`, append-only, com
+  rotação mensal pelo nome do arquivo e retenção aplicada quando o mês vira.
+  Três invariantes, e todas valem mais que qualquer evento:
+  - **nunca falha e nunca bloqueia.** A casca
+    `harness_log() { { … } >/dev/null 2>&1 || true; }` torna isso estrutural em
+    vez de disciplina. Disco cheio, `jq` ausente ou diretório sem permissão não
+    podem derrubar um hook — muito menos o `PreToolUse`, que decide permissão:
+    perder uma linha de log é barato, perder a trava de produção não é;
+  - **nunca vaza segredo.** No veredito `allow` entra só o primeiro token do
+    comando (`harness_bin`): `API_KEY=segredo pnpm build` vira `pnpm`. Só no
+    `deny` o comando é gravado, e o truncamento em 200 caracteres mora no
+    emissor, não no chamador — regra de vazamento que depende de cada call site
+    lembrar já vazou;
+  - **nunca fala.** Nada em stdout, que no `PreToolUse` é o protocolo de decisão.
+- **`.harness/stats.sh`** — leitor read-only, com `--since 7d|30d|all|AAAA-MM-DD`,
+  `--json` e `--denies`. A ordem das seções é a ordem das perguntas do dono, e a
+  primeira é sempre *o que ele impediu?*. Responde ainda: reprovações do gate de
+  turno por gate, com duração mediana; estado das duas catracas, com **há quantos
+  dias não encolhem** (lido do `git log`, comparando o baseline com o do commit
+  anterior); cobertura, onde `lint` ausente aparece como **lacuna** e não como
+  silêncio; e os arquivos mais tocados.
+- **`/stats`** — o comando roda o script e **interpreta**: aponta o gate que
+  nunca disparou, a catraca parada, a lacuna de cobertura. Não repete números.
+- **`instrument-hook.sh`** — o retrofit de hook editado à mão, descrito abaixo.
+- **`75-telemetria`** — 56 testes. Entre eles: com o arquivo da trilha sem
+  permissão de escrita o `guard-prod` continua negando e o evento é perdido em
+  silêncio; `API_KEY=` e a senha de uma URL do `psql` não aparecem em byte nenhum
+  do arquivo; e o hook permissivo continua com stdout vazio.
+
+### Adicionado — honestidade do número (V13 → R6)
+- **`0 bloqueios` tem três significados, e o relatório diz qual é.** Trilha vazia
+  é *sem dado*; trilha que cobre a janela é *um fato sobre o repositório*; trilha
+  mais curta que a janela é *não há dado sobre o resto*. Confundir os três produz
+  confiança falsa, e confiança falsa em número de segurança é pior que não ter o
+  número.
+- **Fonte secundária rotulada.** Quando a trilha é mais curta que a janela, o
+  leitor complementa com os `stop_hook_summary` dos transcripts e marca a seção
+  como **reconstruída**, nunca como medida — histórico no dia zero em vez de
+  relatório vazio.
+- **Modo de permissão predominante.** Lido dos transcripts, que são a única fonte
+  disponível. Quando for `bypassPermissions`, o relatório diz em voz alta que o
+  bloco `permissions.allow` do `settings.json` não tem efeito algum — só as
+  negações são honradas — e que a dupla trava de produção passa a depender só do
+  hook. Metade da configuração de permissão que a instalação escreveu vira
+  decoração enquanto isso durar, e hoje ninguém percebe.
+
+### Adicionado — retrofit sem perder regra escrita à mão
+A `0.3.0` precisa instrumentar os hooks, e `guard-prod.sh` é justamente onde as
+regras do projeto são acrescentadas ao fim. **Perder uma regra `deny` escrita à
+mão para ganhar estatística seria um péssimo negócio**, então:
+
+- sha bate → o hook é reescrito inteiro e já sai instrumentado;
+- sha não bate → a telemetria é **enxertada**. O bloco captura a função existente
+  com `declare -f` e a chama depois de registrar, sem mover uma linha das regras
+  locais. O resultado passa por `bash -n` antes de substituir o arquivo, porque
+  hook quebrado é pior que hook sem trilha;
+- não deu para enxertar → ação `nao-instrumentado` **com o motivo**, e o arquivo
+  fica intacto (D4 → R10).
+
+A granularidade menor do enxerto é declarada, não escondida: `guard-prod` editado
+à mão registra o bloqueio como `nao-rotulado`, porque a assinatura antiga da
+`deny()` não carrega o motivo — inventar categoria a partir do texto da recusa
+seria pior que admitir a lacuna.
+
+### Corrigido — defeitos encontrados construindo isto
+- **`jq` lê `false` como vazio.** `.telemetry.enabled // true` devolve `true` para
+  `{"enabled": false}`: a chave que desliga a telemetria seria lida como se a
+  ligasse. Agora o teste é de igualdade, e `validate.sh` reprova a volta do `//`.
+- **O enxerto duplicava a trilha.** A guarda de idempotência procurava a marca do
+  próprio enxerto, e um hook **gerado** por esta versão já emite eventos por
+  dentro — chegando ao enxerto pelo caminho do sha divergente depois de uma
+  edição à mão. Cada `deny` entrava duas vezes e a estatística mostrava o dobro
+  do que aconteceu. A guarda passa a ser por `harness_log`.
+- **O eval reprovava quando o texto estava lá.** `stats.sh | grep -q` devolve 141
+  sob `pipefail`: o `grep` fecha o pipe no primeiro casamento e o script morre de
+  SIGPIPE. A saída vai para variável antes do teste.
+- **`chmod` no diretório não impede append em arquivo existente.** O teste de
+  "disco cheio" passava sem ter impedido nada; agora ele tira a permissão do
+  arquivo.
+- **Asset que menciona a marca de versão perde a linha na instalação.** O
+  `copy_marked` remove toda linha que contenha `harness-generated:` antes de pôr
+  a sua — e o `--help` do `stats.sh` tinha um `awk` que filtrava exatamente essa
+  linha. O arquivo passava em `bash -n` aqui e saía quebrado no repositório do
+  usuário. `validate.sh` passa a reprovar qualquer asset que cite a marca mais de
+  uma vez.
+
+### Alterado
+- **A trilha se ignora de dentro de `.harness/`**, com um `.gitignore` próprio, e
+  o `.gitignore` da raiz **não é tocado**. A especificação desta feature pedia
+  uma linha na raiz, mas a raiz não está na fronteira de escrita de `HARNESS.md`
+  §1 — e abrir exceção para uma linha de conveniência é como fronteira declarada
+  vira fronteira negociável. `validate.sh` reprova quem escrever lá.
+- **`deny()` do `guard-prod.sh` passa a receber o rótulo do motivo** como
+  primeiro argumento (`release`, `tag-push`, `deploy-prod`, `prod-write`,
+  `drop-truncate`). Regra local escolhe o seu.
+- **`fail()` do `verify.sh` passa a receber o nome do gate** que reprovou.
+- `cleanup.sh` é o único hook **não** instrumentado, de propósito: ele apaga
+  rastro de sessão, e a trilha é persistente por definição.
+- `HARNESS.md` vai a v2.2 (V12, V13, e os dois critérios novos em §12);
+  `CONFORMIDADE.md` a v1.3, com a lacuna §6.6; `PLAN.md` a v2.3, registrando o
+  trilho do enxerto para toda feature futura que precise tocar hook.
+- `harness.json` ganha `telemetry: {enabled, retention_months}`. `enabled: false`
+  faz os emissores virarem no-op imediato, o leitor diz isso em vez de imprimir
+  relatório vazio, e **sobrevive a reinstalar** — a mesma regra que protege o
+  dono e o teto de autonomia.
+
 ## [0.2.9] — 2026-08-26
 
 Revisão da documentação inteira, cruzando cada afirmação verificável com o

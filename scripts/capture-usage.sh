@@ -140,6 +140,35 @@ if quer 8; then
   (cd "$d" && ./.harness/gate-boundaries.sh --tighten); echo "(exit $?)"
 fi
 
+if quer 8.1; then
+  d=$(legado tel --god)
+  "$I/plan-install.sh" "$d" > "$W/tel.plan.json" 2>/dev/null
+  "$I/gen-config.sh" "$d" --plan "$W/tel.plan.json" --owner "Flavio Magacho" --fase 1 >/dev/null 2>&1
+  "$I/gen-baseline.sh" "$d" >/dev/null 2>&1
+  # Eventos vindos dos hooks de verdade, não escritos à mão: a página afirma que
+  # nenhuma saída dela é ilustrativa, e trilha inventada seria a mesma classe de
+  # defeito que a 0.2.9 corrigiu.
+  g() { echo "{\"session_id\":\"s1\",\"tool_input\":{\"command\":$(jq -Rn --arg c "$1" '$c')}}" \
+        | CLAUDE_PROJECT_DIR="$d" "$d/.claude/hooks/guard-prod.sh" >/dev/null 2>&1; }
+  g 'git tag -a v1.4.0 -m "release"'
+  g './ops/deploy.sh --env prd'
+  g 'psql -h db -c "TRUNCATE faturas"'
+  g 'pnpm run build'; g 'git status'; g 'git diff'
+  printf '%s\n' "$d/src/comum/moeda.js" > "/tmp/cc-touched-s1-main.txt"
+  echo '{"session_id":"s1"}' | CLAUDE_PROJECT_DIR="$d" "$d/.claude/hooks/verify.sh" >/dev/null 2>&1
+  for f in src/comum/moeda.js src/comum/moeda.js src/cobranca/cobrar.js; do
+    echo "{\"session_id\":\"s1\",\"tool_input\":{\"file_path\":\"$d/$f\"}}" \
+      | CLAUDE_PROJECT_DIR="$d" "$d/.claude/hooks/on-edit.sh" >/dev/null 2>&1
+  done
+  rm -f /tmp/cc-touched-s1-main.txt
+  bloco 8.1 "uma linha da trilha, como o hook a escreve"
+  find "$d/.harness/log" -name 'events-*.jsonl' -exec head -1 {} +
+  bloco 8.1 "stats.sh"
+  (cd "$d" && ./.harness/stats.sh)
+  bloco 8.1 "stats.sh --denies"
+  (cd "$d" && ./.harness/stats.sh --denies)
+fi
+
 if quer 9; then
   bloco 9 "plan-install.sh — stack sem adaptador"
   "$I/plan-install.sh" "$F/python-sem-adaptador" | jq '{boundary, pendencias}'

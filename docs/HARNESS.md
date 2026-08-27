@@ -8,7 +8,7 @@ lá.** Regra sem R correspondente é cerimônia e foi removida — ver §12.
 
 A implantação é o `PLAN.md`. Este documento não descreve como instalar.
 
-Versão 2.1 · Escopo: harness distribuível, adotável por qualquer projeto
+Versão 2.2 · Escopo: harness distribuível, adotável por qualquer projeto
 
 ---
 
@@ -211,6 +211,32 @@ arquivo em `-parte2` para satisfazer o número. A recusa do gate tem de dizer is
 quase sempre produz import mútuo ou órfão. Sem V7 e sem o gate de fronteira, um
 gate de tamanho isolado piora o código que deveria proteger.
 
+**V12 — Todo hook que decide deixa trilha.** `→ R6`
+Recusa de permissão, reprovação de gate, liberação por anti-loop e edição vão
+para uma trilha append-only no repositório (`.harness/log/`, um arquivo por mês,
+não versionada). O emissor **nunca falha, nunca bloqueia e nunca fala**: qualquer
+erro dele é engolido, porque perder uma linha de log é barato e derrubar o hook
+que decide permissão não é. E **nunca vaza segredo**: no veredito permissivo
+grava-se só o binário do comando, nunca os argumentos; conteúdo de arquivo, diff
+e saída de gate não entram.
+
+*Por que:* sem isto os quatro hooks são invisíveis, e "o harness está
+funcionando?" só se responde por arqueologia nos transcripts da ferramenta —
+onde apenas o gate de turno deixa registro. O harness que protege sem registrar
+não é auditável, e um gate desligado por engano se parece exatamente com um gate
+que nunca precisou reprovar.
+
+**V13 — Zero medido e zero desconhecido são coisas diferentes.** `→ R6`
+Todo número da estatística sai acompanhado do tamanho da trilha que o produziu.
+`0 bloqueios` com trilha que cobre a janela é um fato sobre o repositório;
+`0 bloqueios` com trilha criada ontem é ausência de dado. Quando a trilha é mais
+curta que a janela pedida, o que for reconstruído de fonte secundária é rotulado
+como **reconstruído**, nunca como medido.
+
+*Por que:* é a mesma família de C4. Um relatório que imprime zero sem dizer sobre
+quanto tempo produz confiança falsa — e confiança falsa em número de segurança é
+pior que não ter o número.
+
 ---
 
 ## 7. Ambiente, permissão e autonomia — regras A
@@ -392,6 +418,8 @@ Verificável, não declarável. Cada item cita o R que serve.
 - [ ] Script de investigação existe e é read-only `A3 → R5`
 - [ ] Teto de autonomia declarado; elevá-lo exige revisão `A6,A7 → R5`
 - [ ] Dono registrado `D6 → R6`
+- [ ] Hook que decide deixa trilha, sem falhar, bloquear ou vazar argumento `V12 → R6`
+- [ ] A estatística distingue zero medido de zero desconhecido `V13 → R6`
 - [ ] Nenhum arquivo do harness contém segredo `A5 → R5`
 - [ ] Cada subagente declara o que não repete `G3 → R9`
 
@@ -414,6 +442,9 @@ não rastrearem a nenhum R:
 
 ## Histórico
 
+- **2.2** — acrescentadas V12 (trilha dos hooks) e V13 (zero medido ≠ zero
+  desconhecido), ambas rastreando a R6: o conhecimento que o harness produz ao
+  decidir parava de existir no fim da sessão.
 - **2.1** — acrescentadas V10 (catraca de tamanho) e V11 (divisão função/arquivo
   entre linter e catraca), ambas rastreando a R4. C5 renomeada para deixar
   explícito que trata do `CLAUDE.md` e não do código-fonte.

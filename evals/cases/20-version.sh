@@ -20,6 +20,16 @@ t "lê a versão que instalou o repo"     "$V $VR | grep '0.0.9'"
 t "acusa divergência de versão"         "$V $VR | grep 'instalado por outra versão'"
 t "e diz que reinstalar é seguro (D3)"  "$V $VR | grep 'idempotente'"
 t "mostra o dono (D6)"                  "$V $VR | grep Fulano"
+t "estado da trilha aparece (V12)"      "$V $VR | grep 'trilha'"
+t "trilha ligada e vazia é dita assim"  "$V $VR | grep 'ainda sem evento'"
+mkdir -p "$VR/.harness/log"
+printf '{"ts":"2026-08-27T00:00:00Z","sid":"x","ev":"guard","verdict":"deny"}\n' \
+  > "$VR/.harness/log/events-2026-08.jsonl"
+t "e com evento aponta o leitor"        "$V $VR | grep 'stats.sh'"
+# `// true` devolveria true aqui: em jq o false é vazio. Foi um defeito real.
+jq '.telemetry={enabled:false}' "$VR/.harness/harness.json" > "$W/v.tel" \
+  && mv "$W/v.tel" "$VR/.harness/harness.json"
+t "telemetria desligada é dita, não omitida" "$V $VR | grep 'DESLIGADA'"
 printf '{"harness_version":"0.0.9","autonomy_ceiling":"supervisionado"}\n' > "$VR/.harness/harness.json"
 t "dono ausente é acusado como D6"      "$V $VR | grep 'NÃO REGISTRADO'"
 unset CLAUDE_PLUGIN_ROOT

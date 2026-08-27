@@ -28,6 +28,7 @@ os mesmos).
 | `55-merge-settings` | o merge de `settings.json`: união, substituição, e a recusa |
 | `60-catraca-fronteira` | presença: diferença de conjunto, baseline só encolhe |
 | `70-catraca-tamanho` | grandeza: o número não sobe, `--tighten`, `--rename` |
+| `75-telemetria` | a trilha: registra sem falhar, sem vazar e sem falar; e o leitor não confunde zero com ausência de dado |
 | `80-sem-adaptador` | D4: a lacuna é dita, e a catraca de tamanho continua valendo |
 | `90-scaffold` | modo B: nomes do domínio real, baselines vazios, teto absoluto |
 | `95-fumaca` | V9 de ponta a ponta, com a ferramenta de verdade |
@@ -134,6 +135,28 @@ Os evals afirmam `totalCruised > 0` **e** a contagem esperada de violações. Um
 eval que só verificasse "saiu 0" continuaria passando com o defeito — foi
 exatamente o que aconteceu. Um deles entrega o diretório nu direto à ferramenta
 e exige que cruze zero: trava a regressão pelo mecanismo, não pelo sintoma.
+
+## A trilha que não podia derrubar o hook
+
+A telemetria da 0.3.0 é a primeira coisa do harness que roda dentro de um hook
+sem ser a decisão dele. Três invariantes do emissor têm eval próprio, porque
+falhar em qualquer uma custa mais do que a estatística vale:
+
+- **não derruba** — com o arquivo da trilha sem permissão de escrita, o
+  `guard-prod` continua negando e o evento é perdido em silêncio. O teste usa
+  `chmod` no ARQUIVO: `chmod` no diretório não impede append em arquivo que já
+  existe, e passaria sem ter impedido nada;
+- **não vaza** — `API_KEY=segredo pnpm build` entra na trilha como `pnpm`, e a
+  senha de uma URL de conexão do `psql` não aparece em byte nenhum;
+- **não fala** — a saída do hook permissivo continua vazia, porque no
+  `PreToolUse` o stdout é o protocolo de decisão.
+
+E dois evals cobrem o retrofit, que é onde o dano seria irreversível: um hook da
+versão anterior com uma regra `deny` do projeto acrescentada à mão é **enxertado,
+nunca sobrescrito** — a regra local continua bloqueando, o bloqueio entra na
+trilha, e rodar a instalação de novo não enxerta uma segunda camada. Sem essa
+última verificação cada bloqueio valeria duas linhas e a estatística mostraria o
+dobro do que aconteceu — foi o primeiro defeito que a suíte pegou.
 
 ## Cobertura que falta
 

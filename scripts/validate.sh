@@ -193,6 +193,79 @@ done
 grep -q 'PERMISSÕES NÃO INSTALADAS' plugin/skills/install/scripts/gen-config.sh \
   || err "merge recusado não diz em voz alta que as permissões não entraram (A8)"
 
+echo "→ telemetria: a trilha existe, não fala, não vaza e não pode derrubar hook (V12)"
+LOG=plugin/skills/install/assets/telemetry/log.sh
+ST=plugin/skills/install/assets/telemetry/stats.sh
+[[ -f $LOG ]] || err "emissor de telemetria ausente"
+[[ -x $ST ]] || err "leitor da trilha ausente ou sem bit de execução"
+# O schema mora em UM lugar. Hook que monta JSON por conta própria é como os
+# campos divergem entre eles — e a estatística passa a somar coisas diferentes.
+for h in guard-prod verify on-edit; do
+  H=plugin/skills/install/assets/retrofit/hooks/$h.sh
+  grep -q 'harness/log.sh' $H || err "$h.sh não sourceia o emissor: o schema volta a divergir por hook"
+  grep -q 'harness_log ' $H || err "$h.sh não emite evento algum"
+  grep -qE 'events-.*jsonl' $H && err "$h.sh escreve na trilha direto, sem passar pelo emissor"
+done
+# cleanup.sh apaga rastro de SESSÃO. A trilha é persistente por definição: se
+# ele começar a emitir, a próxima pessoa vai fazê-lo apagar também.
+grep -q 'harness_log' plugin/skills/install/assets/retrofit/hooks/cleanup.sh \
+  && err "cleanup.sh foi instrumentado: a trilha não pertence ao ciclo de vida da sessão"
+# A regra nº 1 do emissor. Sem a casca, um `set -e` no hook ou um disco cheio
+# derruba o PreToolUse, que é quem decide permissão.
+grep -q 'harness_log() { { _harness_log_emit "$@"; } >/dev/null 2>&1 || true' $LOG \
+  || err "o emissor perdeu a casca que engole erro e silencia stdout (V12)"
+# A regra nº 2. `harness_bin` é o que separa registrar atividade de vazar
+# credencial: no allow entra o binário, nunca os argumentos.
+grep -q 'harness_bin "$cmd"' plugin/skills/install/assets/retrofit/hooks/guard-prod.sh \
+  || err "o guard registra o comando inteiro no allow — argumento carrega segredo (V12)"
+grep -qE 'verdict=allow subject="\$cmd"' plugin/skills/install/assets/retrofit/hooks/guard-prod.sh \
+  && err "o allow do guard grava argumentos: é assim que API_KEY entra na trilha"
+# `// true` em jq trata false como vazio: a chave que desliga a telemetria seria
+# lida como se a ligasse. Custou um teste para aparecer.
+grep -q "telemetry.enabled // true" $LOG \
+  && err "o emissor lê enabled com // true, que em jq devolve true para false"
+# V13: zero medido e zero desconhecido são coisas diferentes.
+grep -q 'cobre_a_janela' $ST || err "o leitor não sabe se a trilha cobre a janela pedida (V13)"
+grep -q 'RECONSTRUÍDO' $ST || err "o leitor não rotula o que veio de fonte secundária (V13)"
+# Retrofit: hook editado à mão é enxertado, nunca sobrescrito.
+IH=plugin/skills/install/scripts/instrument-hook.sh
+[[ -x $IH ]] || err "não há caminho de retrofit para hook editado à mão"
+grep -q "instrument-hook.sh" plugin/skills/install/scripts/gen-config.sh \
+  || err "gen-config.sh não enxerta telemetria no hook que ele pulou"
+grep -q "grep -q 'harness_log' \"\$alvo\"" $IH \
+  || err "o enxerto não detecta hook já instrumentado: cada evento entraria duas vezes"
+grep -q 'bash -n "$tmp_out"' $IH \
+  || err "o enxerto não valida o resultado: hook quebrado é pior que hook sem trilha"
+for f in gen-config.sh scaffold.sh; do
+  grep -q 'telemetry/log.sh' plugin/skills/install/scripts/$f \
+    || err "$f não instala o emissor — o hook instrumentado ficaria sem ele"
+  grep -q 'telemetry/stats.sh' plugin/skills/install/scripts/$f \
+    || err "$f não instala o leitor da trilha"
+  grep -q 'harness/log/.gitignore' plugin/skills/install/scripts/$f \
+    || err "$f não faz a trilha se ignorar: ela viraria conflito de merge"
+  # O .gitignore da RAIZ não está na fronteira de escrita de HARNESS.md §1.
+  # A trilha se ignora de dentro de .harness/, que é território autorizado.
+  grep -qE '>>[[:space:]]*"\$root/\.gitignore"' plugin/skills/install/scripts/$f \
+    && err "$f escreve no .gitignore da raiz, fora da fronteira de §1"
+  grep -q 'stats.sh:\*' plugin/skills/install/scripts/$f \
+    || err "$f não libera ./.harness/stats.sh nas permissões — o leitor pediria prompt"
+done
+[[ -f plugin/skills/install/assets/retrofit/commands/stats.md ]] \
+  || err "comando /stats ausente"
+n=$(find plugin/skills/install/assets -name 'stats.md' | wc -l)
+[[ "$n" -eq 1 ]] || err "há $n cópias de stats.md nos assets — política duplicada diverge"
+[[ -f evals/cases/75-telemetria.sh ]] || err "a telemetria não tem eval (V9 aplicado a V12)"
+
+echo "→ nenhum asset cita a marca de versão fora da própria marca"
+# `copy_marked` remove TODA linha que contenha `harness-generated:` antes de pôr
+# a sua. Um asset que mencione a marca no meio do código sai da instalação com
+# essa linha faltando — e só quebra no repositório do usuário. Aconteceu com um
+# `awk` de --help que filtrava justamente essa linha.
+while IFS= read -r f; do
+  n=$(grep -c 'harness-generated:' "$f")
+  [[ "$n" -le 1 ]] || err "$f cita a marca de versão $n vezes; a instalação apagaria $((n - 1)) linha(s)"
+done < <(find plugin/skills/install/assets plugin/skills/install/scripts/adapters -type f 2>/dev/null)
+
 echo "→ a catraca é do harness, não da ferramenta (V8)"
 grep -q 'baseline.json' plugin/skills/install/assets/gate/boundaries.sh \
   || err "o gate não compara com o baseline do harness"
