@@ -725,6 +725,30 @@ durar, e hoje ninguém percebe.
 O comando `/stats` roda o script e **interpreta**: aponta o gate que nunca
 disparou, a catraca parada e a lacuna de cobertura, sem repetir os números.
 
+**E há um segundo comando, do plugin:** `/harness:stats` mostra o que está
+gravado, sem julgar — deste repositório, ou de todos os da máquina:
+
+```
+$ harness-stats.sh --all
+repositório                               versão   trilha      eventos  bloqueios
+────────────────────────────────────────────────────────────────────────────────
+/home/fulano/Workspace/faturamento        0.3.0    medindo     412      7
+/home/fulano/Workspace/legado             0.2.7    sem-emissor 0        0
+
+  1 repositório(s) com harness anterior à telemetria: nenhum hook
+  registra nada ali, e 0 evento não quer dizer que nada aconteceu.
+  harness:install de novo liga a trilha sem sobrescrever edição manual.
+```
+
+`sem-emissor` é a linha que justifica a tabela existir: um repositório com gates
+funcionando e **nenhum registro deles**. Sem essa distinção, ele apareceria como
+`0 eventos, 0 bloqueios` — indistinguível de um repositório tranquilo.
+
+Os dois comandos leem pelo **mesmo** `stats.sh`, via `--root`. Não há segunda
+implementação da leitura, pela mesma razão que não há segunda varredura de
+arquivo-fonte: listas paralelas divergem, e a errada é sempre a que alguém lê
+antes de decidir.
+
 Para desligar tudo: `telemetry.enabled: false` em `.harness/harness.json`. O
 leitor passa a dizer isso, em vez de imprimir um relatório vazio que pareceria
 inatividade.

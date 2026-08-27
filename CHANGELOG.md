@@ -46,6 +46,27 @@ engano se parece exatamente com um gate que nunca precisou reprovar.
   silêncio; `API_KEY=` e a senha de uma URL do `psql` não aparecem em byte nenhum
   do arquivo; e o hook permissivo continua com stdout vazio.
 
+### Adicionado — quem lê a trilha
+- **`/harness:stats`** (comando do plugin) — mostra o que está gravado nesta
+  máquina, sem interpretar: relatório completo deste repositório, ou uma tabela
+  com todos os que têm trilha. A linha que justifica a tabela é `sem-emissor` —
+  repositório com harness anterior à `0.3.0`, gates funcionando e **nenhum
+  registro deles**. Sem essa distinção ele apareceria como `0 eventos,
+  0 bloqueios`, indistinguível de um repositório tranquilo. Complementa o
+  `/stats` instalado no repositório, que é quem julga.
+- **`harness:audit` passa a medir a trilha.** `telemetry-status.sh` entra na
+  coleta mecânica, o relatório ganha a seção **Trilha**, e o modo de permissão
+  predominante entra na postura de risco (§3.1): em `bypassPermissions` o
+  `permissions.allow` do repositório auditado não tem efeito algum. Os quatro
+  estados — `medindo`, `sem-emissor`, `desligada`, `vazia` — significam coisas
+  diferentes, e a skill é instruída a não colapsar nenhum deles em "0 bloqueios".
+- **`stats.sh --root <dir>`** — é o que torna o item acima possível sem uma
+  segunda implementação. O audit e o comando da máquina chamam o **mesmo** leitor
+  que o repositório instalado usa; `validate.sh` reprova consumidor que leia
+  `events-*.jsonl` por conta própria. Mesma razão pela qual o gate de tamanho
+  expõe `--measure --root`: foi a varredura em três cópias que fez o plano
+  acusar god file em `.next/`.
+
 ### Adicionado — honestidade do número (V13 → R6)
 - **`0 bloqueios` tem três significados, e o relatório diz qual é.** Trilha vazia
   é *sem dado*; trilha que cobre a janela é *um fato sobre o repositório*; trilha
@@ -96,6 +117,14 @@ seria pior que admitir a lacuna.
 - **`chmod` no diretório não impede append em arquivo existente.** O teste de
   "disco cheio" passava sem ter impedido nada; agora ele tira a permissão do
   arquivo.
+- **O eval do enxerto media outra coisa a cada commit.** Ele montava o "hook da
+  versão anterior" com `git show HEAD:` — e assim que a telemetria entrou no
+  histórico, HEAD passou a devolver o hook já instrumentado: o caso exercitava
+  `ja-instrumentado` achando que exercitava o enxerto. O hook agora é escrito no
+  próprio eval, pelo formato e não pelo histórico.
+- **Um caso sujava o estado do seguinte.** O teste de "reinstalar não religa a
+  telemetria" deixava a fixture com `enabled: false`, e o caso do audit reprovava
+  três telas abaixo, longe da causa.
 - **Asset que menciona a marca de versão perde a linha na instalação.** O
   `copy_marked` remove toda linha que contenha `harness-generated:` antes de pôr
   a sua — e o `--help` do `stats.sh` tinha um `awk` que filtrava exatamente essa
@@ -115,6 +144,9 @@ seria pior que admitir a lacuna.
 - **`fail()` do `verify.sh` passa a receber o nome do gate** que reprovou.
 - `cleanup.sh` é o único hook **não** instrumentado, de propósito: ele apaga
   rastro de sessão, e a trilha é persistente por definição.
+- **`/harness:version` ganha a linha `trilha`** — ligada com N eventos, ligada e
+  vazia, ou desligada. Telemetria desligada era exatamente a coisa que ficaria
+  invisível: o `/stats` existiria e não teria o que ler.
 - `HARNESS.md` vai a v2.2 (V12, V13, e os dois critérios novos em §12);
   `CONFORMIDADE.md` a v1.3, com a lacuna §6.6; `PLAN.md` a v2.3, registrando o
   trilho do enxerto para toda feature futura que precise tocar hook.

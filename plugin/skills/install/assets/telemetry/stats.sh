@@ -11,6 +11,13 @@
 #   ./.harness/stats.sh --since 7d      janela: 7d, 30d, all, ou YYYY-MM-DD
 #   ./.harness/stats.sh --json          o mesmo conteúdo, legível por máquina
 #   ./.harness/stats.sh --denies        só os bloqueios, um por linha
+#   ./.harness/stats.sh --root <dir>    lê a trilha de OUTRO repositório
+#
+# `--root` existe para que ninguém reimplemente esta leitura. O relatório do
+# harness:audit e o comando /harness:stats precisam ler a trilha de um
+# repositório qualquer, e a alternativa seria uma segunda implementação do mesmo
+# jq — que divergiria da primeira na primeira correção. Mesma razão pela qual o
+# gate de tamanho expõe `--measure --root`.
 #
 # REGRA DE HONESTIDADE, que vale para toda a saída: zero nunca é impresso sem
 # o tamanho da trilha ao lado. `0 bloqueios` com 30 dias de trilha é um fato
@@ -21,15 +28,14 @@ set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(dirname "$here")"
-cfg="$here/harness.json"
-logdir="$here/log"
 
-since="30d"; as_json=0; only_denies=0
+since="30d"; as_json=0; only_denies=0; opt_root=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --since) since="${2:-30d}"; shift 2 ;;
     --json) as_json=1; shift ;;
     --denies) only_denies=1; shift ;;
+    --root) opt_root="${2:-}"; shift 2 ;;
     # O cabeçalho inteiro, lido pelo conteúdo e não por número de linha: a marca
     # de versão que a instalação insere desloca as linhas, e o --help passava a
     # imprimir uma linha de código no fim. O padrão é escrito partido de
@@ -40,6 +46,13 @@ while [[ $# -gt 0 ]]; do
     *) echo "argumento desconhecido: $1" >&2; exit 64 ;;
   esac
 done
+
+if [[ -n "$opt_root" ]]; then
+  root="$(cd "$opt_root" 2>/dev/null && pwd)" \
+    || { echo "stats: raiz inexistente: $opt_root" >&2; exit 64; }
+fi
+cfg="$root/.harness/harness.json"
+logdir="$root/.harness/log"
 
 command -v jq >/dev/null 2>&1 || { echo "stats: jq é necessário." >&2; exit 3; }
 [[ -f "$cfg" ]] || { echo "stats: $cfg ausente — o harness não está instalado aqui." >&2; exit 3; }

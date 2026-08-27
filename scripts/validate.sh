@@ -255,6 +255,28 @@ done
 n=$(find plugin/skills/install/assets -name 'stats.md' | wc -l)
 [[ "$n" -eq 1 ]] || err "há $n cópias de stats.md nos assets — política duplicada diverge"
 [[ -f evals/cases/75-telemetria.sh ]] || err "a telemetria não tem eval (V9 aplicado a V12)"
+# O leitor é UM. O audit e o comando da máquina chamam `stats.sh --root` em vez
+# de reimplementar o jq — foi a lista de poda em três cópias que fez o plano
+# acusar god file em `.next/`, e não há razão para repetir a história.
+grep -q -- '--root' $ST || err "o leitor não aceita --root: os consumidores voltam a reimplementar a leitura"
+for consumidor in plugin/skills/audit/scripts/telemetry-status.sh \
+                  plugin/scripts/harness-stats.sh; do
+  [[ -x "$consumidor" ]] || err "$consumidor ausente ou sem bit de execução"
+  grep -q 'telemetry/stats.sh' "$consumidor" \
+    || err "$consumidor não lê pelo leitor único"
+  grep -qE 'events-\*\.jsonl|fromjson' "$consumidor" \
+    && err "$consumidor lê a trilha por conta própria — o schema volta a divergir"
+done
+# Zero desconhecido tem de sobreviver à passagem pelo audit: `sem-emissor` é a
+# forma mais silenciosa dele, e some se o script não distinguir os estados.
+for e in sem-emissor desligada vazia medindo; do
+  grep -q "\"$e\"" plugin/skills/audit/scripts/telemetry-status.sh \
+    || err "telemetry-status.sh não distingue o estado $e (V13)"
+done
+grep -q 'telemetry-status.sh' plugin/skills/audit/SKILL.md \
+  || err "o audit não coleta o estado da trilha"
+grep -q '## Trilha' plugin/skills/audit/reference/report-template.md \
+  || err "o relatório do audit não tem seção para a trilha"
 
 echo "→ nenhum asset cita a marca de versão fora da própria marca"
 # `copy_marked` remove TODA linha que contenha `harness-generated:` antes de pôr

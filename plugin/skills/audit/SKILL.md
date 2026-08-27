@@ -26,6 +26,7 @@ com leitura manual: menos confiável e não reproduzível entre execuções.
 ./scripts/check-claims.sh <repo>       # regra C4: as afirmações são verdadeiras?
 ./scripts/boundary-status.sh <repo>    # grafo e dimensão do baseline
 ./scripts/size-status.sh <repo>        # god files: mediana, p95, quantos acima do teto
+./scripts/telemetry-status.sh <repo>   # a trilha: existe? liga? o que registrou? (V12)
 ```
 
 Se `boundary_adapter` vier como `unsupported:*`, **declare em voz alta** no
@@ -44,6 +45,33 @@ teto precisa ser discutido antes de instalar, não depois. Ele também sai com
 sem diretório de código reconhecido, ou adaptador que cruzou zero módulo. Isso
 **não é "sem violações"**: é dimensão desconhecida. Relate como lacuna e não
 conclua nada sobre a catraca a partir dela.
+
+`telemetry-status.sh` responde o que nenhuma leitura de arquivo responde: **o
+que os hooks efetivamente pegaram**. Ele não reimplementa nada — chama o mesmo
+leitor da trilha que o repositório instalado usa (`stats.sh --root`), e por isso
+funciona inclusive onde o harness é anterior à telemetria.
+
+Também sai com **código 3** quando não há o que medir, e as quatro razões são
+diferentes entre si — o campo `estado` diz qual:
+
+- **`sem-emissor`** — harness instalado por versão anterior à `0.3.0`. É o caso
+  mais traiçoeiro: o repositório tem gates funcionando e **nenhum registro deles**.
+  Vai para *Adicionar*, com a frase certa: não é "0 bloqueios", é "ninguém estava
+  medindo". Reinstalar liga a trilha sem sobrescrever hook editado à mão.
+- **`desligada`** — `telemetry.enabled: false`, decisão registrada do projeto.
+  Registre; não recomende religar sem perguntar.
+- **`vazia`** — ligada, ainda sem evento.
+- **`sem-harness`** — não se aplica.
+
+Quando o estado for `medindo`, o número **nunca** vai ao relatório sozinho:
+`0 bloqueios` numa trilha de 40 dias é um fato sobre o repositório; numa trilha
+de ontem é ausência de dado (V13). O campo `dias_de_trilha` acompanha o número
+sempre.
+
+E leia `allow_efetivo`: quando for `false`, as sessões daquele repositório rodam
+em `bypassPermissions`, o bloco `permissions.allow` não tem efeito algum, e a
+dupla trava de produção passa a depender só do hook. É achado de risco (§3.1),
+não rodapé.
 
 ### 2. Leitura de contexto
 
@@ -69,6 +97,8 @@ com o arquivo e a frase que não fecha).
 ### 3.1. Postura de risco
 
 - Caminho para produção alcançável pelo agente (regra A1/A2)
+- Modo de permissão predominante (`telemetry-status.sh → allow_efetivo`): em
+  `bypassPermissions`, metade da configuração de permissão é decoração
 - Segredo versionado ou legível (A5)
 - Permissões ausentes ou permissivas demais
 - Garantia dependendo de configuração pessoal (D1)
@@ -81,7 +111,11 @@ sucesso tem observador (D6).
 
 ### 5. Relatório
 
-Use `reference/report-template.md`. Três listas, nesta ordem:
+Use `reference/report-template.md`. A seção **Trilha** é onde entra o que
+`telemetry-status.sh` mediu — e onde a distinção entre zero medido e zero
+desconhecido tem de aparecer em palavras, não só em número.
+
+Três listas, nesta ordem:
 
 1. **Remover** — instrução falsa, documentação disfarçada de instrução,
    ferramenta conectada e não usada

@@ -8,14 +8,17 @@ código-fonte.
 | skill | o que faz | escreve? |
 |---|---|---|
 | `harness:audit` | diagnostica o repositório e produz três listas: remover, corrigir, adicionar | **não** — read-only |
-| `harness:install` | instala hooks, permissões, catraca de violações e `CLAUDE.md` por módulo | sim, sempre com confirmação |
+| `harness:install` | instala hooks, permissões, catraca de violações, telemetria e `CLAUDE.md` por módulo | sim, sempre com confirmação |
 
 E um comando: **`/harness:version`** — que versão da skill está rodando, que
 versão instalou o harness deste repositório, e se as duas divergiram.
 
-O harness instalado ganha o seu: **`/stats`** lê a trilha que os hooks deixam e
-responde o que antes exigia arqueologia — o que o guard barrou, o que o gate
-reprovou, e há quantos dias a catraca não encolhe.
+E **`/harness:stats`** — o que os hooks gravaram nesta máquina: deste
+repositório, ou de todos os que têm trilha, com o estado de cada uma.
+
+O harness instalado ganha o seu: **`/stats`** lê a trilha deste repositório e
+**interpreta** — aponta o gate que nunca disparou, a catraca parada e a lacuna
+de cobertura. Os dois se complementam: um mostra, o outro julga.
 
 O guia de uso, com a saída real de cada passo, está em
 [`docs/USAGE.md`](docs/USAGE.md).
@@ -125,6 +128,11 @@ que perder uma linha de log —, **nunca vaza** — no veredito permissivo grava
 o binário, nunca os argumentos, que carregam `API_KEY=...` — e **nunca fala**,
 porque o `PreToolUse` usa stdout como protocolo de decisão.
 
+O `harness:audit` passa a medir isso também: o relatório tem seção de trilha, e
+o estado `sem-emissor` — harness anterior à `0.3.0`, gates funcionando e nenhum
+registro deles — vira item da lista de *adicionar*, não um `0 bloqueios` que
+soaria como boa notícia.
+
 E a estatística distingue **zero medido** de **zero desconhecido**: `0 bloqueios`
 com trilha de 30 dias é um fato; com trilha de ontem é ausência de dado, e o
 relatório diz qual dos dois é. Desligável em `.harness/harness.json`
@@ -164,7 +172,7 @@ possível.
 
 ## O que tem aqui
 
-    plugin/commands/        /harness:version
+    plugin/commands/        /harness:version · /harness:stats
     plugin/skills/audit/    diagnostica: read-only, produz o relatório
     plugin/skills/install/  instala: dois modos, um mecanismo
       assets/template/      scaffold de projeto novo

@@ -113,19 +113,41 @@ t "e reinstalar NÃO religa o que o projeto desligou" \
   "jq '.telemetry.enabled=false' $Y/.harness/harness.json > $W/t2 && mv $W/t2 $Y/.harness/harness.json;
    $I/gen-config.sh $Y --plan $W/tel.plan.json --owner X --fase 1 >/dev/null 2>&1;
    jq -e '.telemetry.enabled==false' $Y/.harness/harness.json"
+# Devolve $Y ao estado ligado. Caso que suja estado global reprova o caso
+# seguinte longe da causa — foi o que a divisão da suíte em famílias comprou.
+jq '.telemetry.enabled=true' "$Y/.harness/harness.json" > "$W/t3" && mv "$W/t3" "$Y/.harness/harness.json"
 
 echo "→ install / retrofit: hook editado à mão é enxertado, nunca sobrescrito (D3)"
 Z=$W/tel-retro
 legado_instalado tel-retro
-# Hook da versão anterior — sem telemetria — com uma regra do projeto ao fim.
-git show HEAD:plugin/skills/install/assets/retrofit/hooks/guard-prod.sh \
-  | sed 's/__VERSION__/0.2.9 sha=0000000000000000/' > "$Z/.claude/hooks/guard-prod.sh"
-python3 - "$Z/.claude/hooks/guard-prod.sh" <<'PY'
-import sys
-p = sys.argv[1]; s = open(p).read()
-s = s.replace("\nexit 0\n", '\n# regra local do time\ngrep -qiE "run_etl" <<<"$cmd" && deny "O ETL roda por agendamento."\n\nexit 0\n')
-open(p, "w").write(s)
-PY
+# Hook no FORMATO da versão anterior — deny() de um argumento, sem telemetria —
+# com uma regra do projeto acrescentada antes do exit final, que é onde uma
+# edição de verdade entra.
+#
+# Escrito aqui, e não lido de `git show HEAD:`: depois que a telemetria entrou no
+# histórico, HEAD passou a devolver o hook já instrumentado, e este bloco
+# testaria o caminho `ja-instrumentado` achando que testava o enxerto. Eval que
+# depende do histórico mede outra coisa a cada commit.
+cat > "$Z/.claude/hooks/guard-prod.sh" <<'HOOK'
+#!/usr/bin/env bash
+# harness-generated: 0.2.9 sha=0000000000000000
+input=$(cat)
+cmd=$(jq -r '.tool_input.command // ""' <<<"$input")
+
+deny() {
+  jq -n --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",
+    permissionDecision:"deny", permissionDecisionReason:$r}}'
+  exit 0
+}
+
+grep -qiE '\b(drop|truncate)[[:space:]]+(table|database)\b' <<<"$cmd" \
+  && deny "DROP/TRUNCATE bloqueado em qualquer ambiente. Crie uma migration."
+
+# regra local do time
+grep -qiE "run_etl" <<<"$cmd" && deny "O ETL roda por agendamento."
+
+exit 0
+HOOK
 chmod +x "$Z/.claude/hooks/guard-prod.sh"
 $I/gen-config.sh "$Z" --plan "$W/tel-retro.plan.json" --owner X --fase 1 > "$W/tel-retro.f1b.json" 2>/dev/null
 t "o hook é PULADO, não sobrescrito" \
@@ -155,6 +177,56 @@ t "a recusa vem com o motivo" \
   "$I/instrument-hook.sh $Z verify | jq -e '.acao==\"nao-instrumentado\" and (.detalhe|test(\"fail\\\\(\\\\)\"))'"
 t "e o hook fica intacto" \
   "[ \$(wc -l < $Z/.claude/hooks/verify.sh) -eq 3 ]"
+
+echo "→ audit / o estado da trilha é medido, e o zero desconhecido sobrevive (V13)"
+TS=$A/telemetry-status.sh
+# A saída vai para variável antes do jq: exit 3 é resposta legítima deste script
+# ("não há o que medir"), e sob pipefail ele derrubaria o pipeline inteiro.
+ts() { "$TS" "$@" 2>/dev/null; return 0; }
+t "repo com trilha: estado 'medindo', exit 0" \
+  "ts $Y | jq -e '.estado==\"medindo\" and .instalada==true and .bloqueios==2' && $TS $Y >/dev/null"
+t "e o número vem com o tamanho da trilha ao lado" \
+  "ts $Y | jq -e '.dias_de_trilha != null'"
+t "repo SEM harness: não se aplica, exit 3" \
+  "ts $F/sem-harness | jq -e '.estado==\"sem-harness\"'; ! $TS $F/sem-harness >/dev/null 2>&1"
+# O caso mais traiçoeiro: gates funcionando e nenhum registro deles. Dizer
+# "0 bloqueios" aqui seria afirmar sobre um repositório que ninguém mediu.
+VELHO=$W/tel-velho
+legado_instalado tel-velho
+rm -f "$VELHO/.harness/log.sh"
+t "harness anterior à telemetria: 'sem-emissor', exit 3" \
+  "ts $VELHO | jq -e '.estado==\"sem-emissor\"'; ! $TS $VELHO >/dev/null 2>&1"
+t "e o recado não diz '0 bloqueios', diz que ninguém mediu" \
+  "ts $VELHO | jq -e '.recado | test(\"nenhum hook registra\")'"
+t "telemetria desligada é estado próprio, não vazio" \
+  "jq '.telemetry.enabled=false' $Y/.harness/harness.json > $W/ts.off && cp $W/ts.off $Y/.harness/harness.json;
+   ts $Y | jq -e '.estado==\"desligada\"'; r=\$?;
+   jq '.telemetry.enabled=true' $W/ts.off > $W/ts.on && cp $W/ts.on $Y/.harness/harness.json; [ \$r -eq 0 ]"
+t "o código de saída lê o mesmo campo que a saída publica" \
+  "! grep -qE 'trilha_desde.*bruto' $TS"
+t "e o audit não reimplementa a leitura da trilha" \
+  "grep -q 'telemetry/stats.sh' $TS && ! grep -q 'events-\\*' $TS"
+
+echo "→ comando /harness:stats — a trilha desta máquina, sem interpretar"
+HSTATS=plugin/scripts/harness-stats.sh
+export CLAUDE_PLUGIN_ROOT="$PWD/plugin"
+t "alvo com trilha devolve o relatório completo" \
+  "o=\$($HSTATS $Y); grep -q 'BLOQUEIOS DO guard-prod' <<<\"\$o\""
+t "e respeita a janela pedida"     "o=\$($HSTATS $Y --since 7d); grep -q '7 dias' <<<\"\$o\""
+t "--json do alvo é o do leitor"   "$HSTATS $Y --json | jq -e '.guard.deny==2'"
+t "alvo sem harness recusa com exit 3" \
+  "! $HSTATS $F/sem-harness >/dev/null 2>&1"
+t "--all devolve uma linha por repositório, ordenada" \
+  "HOME=$W $HSTATS --all --json | jq -e '.repos|type==\"array\"'"
+t "e classifica cada trilha por estado" \
+  "HOME=$W $HSTATS --all --json | jq -e '[.repos[]|select(.estado==\"sem-emissor\")]|length>=1'"
+t "a varredura acha o repo de harness antigo debaixo do HOME" \
+  "HOME=$W $HSTATS --all --json | jq -e '[.repos[]|select(.repo|test(\"tel-velho\"))]|length==1'"
+t "sem trilha nenhuma, diz onde procurar em vez de sair calado" \
+  "o=\$(HOME=$W/nada $HSTATS --all 2>&1 || true); grep -q 'nenhum repositório' <<<\"\$o\""
+t "e o comando não reimplementa o leitor" \
+  "grep -q 'telemetry/stats.sh' $HSTATS && ! grep -q 'fromjson' $HSTATS"
+unset CLAUDE_PLUGIN_ROOT
 
 echo "→ install / modo B nasce com trilha (V12)"
 N=$W/tel-novo; mkdir -p "$N"
